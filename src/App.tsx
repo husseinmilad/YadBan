@@ -96,10 +96,15 @@ export default function App() {
 
   // Native Android reminders are scheduled by the OS, so they can fire when the app is closed.
   useEffect(() => {
-    if (!Capacitor.isNativePlatform() || !settings.notificationsEnabled) return;
+    if (!Capacitor.isNativePlatform()) return;
     let cancelled = false;
     const syncNativeReminders = async () => {
       try {
+        if (!settings.notificationsEnabled) {
+          const pending = await LocalNotifications.getPending();
+          if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map(({ id }) => ({ id })) });
+          return;
+        }
         let permission = await LocalNotifications.checkPermissions();
         if (permission.display === 'prompt' || permission.display === 'prompt-with-rationale') {
           permission = await LocalNotifications.requestPermissions();
@@ -127,8 +132,7 @@ export default function App() {
           });
         };
         for (const item of items) {
-          const completedToday = item.repeatDaily ? item.completedDates.includes(getLocalDateKey(now)) : item.completed;
-          if (completedToday || !item.timeStr) continue;
+          if ((!item.repeatDaily && item.completed) || !item.timeStr) continue;
           const [hour, minute] = item.timeStr.split(':').map(Number);
           if (!Number.isFinite(hour) || !Number.isFinite(minute)) continue;
           const base = item.repeatDaily ? new Date(now.getFullYear(), now.getMonth(), now.getDate()) : new Date(item.dateStr + 'T00:00:00');
