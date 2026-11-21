@@ -32,13 +32,28 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
       - name: Install Capacitor
-        run: npm install --no-save --legacy-peer-deps @capacitor/core@^7 @capacitor/cli@^7 @capacitor/android@^7
+        run: npm install --no-save --legacy-peer-deps @capacitor/core@^7 @capacitor/cli@^7 @capacitor/android@^7 @capacitor/local-notifications@^7
       - name: Build web app
         run: npm run build
       - name: Generate Android project
         run: npx cap add android
       - name: Sync Android project
         run: npx cap sync android
+      - name: Add native launcher widget
+        run: |
+          mkdir -p android/app/src/main/java/com/yadban/app android/app/src/main/res/layout android/app/src/main/res/xml
+          cp native/android/YadbanWidgetProvider.kt android/app/src/main/java/com/yadban/app/
+          cp native/android/yadban_widget.xml android/app/src/main/res/layout/
+          cp native/android/yadban_widget_info.xml android/app/src/main/res/xml/
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          receiver = '''\n        <receiver android:name=".YadbanWidgetProvider" android:exported="true">\n            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>\n            <meta-data android:name="android.appwidget.provider" android:resource="@xml/yadban_widget_info" />\n        </receiver>\n'''
+          if 'YadbanWidgetProvider' not in s:
+              s = s.replace('</application>', receiver + '    </application>')
+              p.write_text(s)
+          PY
       - name: Build debug APK
         working-directory: android
         run: |
