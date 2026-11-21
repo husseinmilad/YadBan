@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/yadban_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:padding="16dp"
+    android:background="#E8F3F0"
+    android:clickable="true"
+    android:focusable="true">
+    <TextView
+        android:id="@+id/yadban_widget_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="یادبان"
+        android:textColor="#164E43"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+    <TextView
+        android:id="@+id/yadban_widget_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="یادآورها و برنامه‌های امروز"
+        android:textColor="#28675A"
+        android:textSize="13sp" />
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="برای باز کردن یادبان لمس کنید"
+        android:textColor="#28675A"
+        android:textSize="11sp" />
+</LinearLayout>
