@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --font-sans: "Vazirmatn", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Default Ocean Teal Material You Palette (Light) */
+  --bg-canvas: #f4f7f6;
+  --bg-surface: #ffffff;
+  --bg-surface-tonal: #eaf1ef;
+  --bg-surface-elevated: #ffffff;
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  --accent: #0f766e;
+  --accent-hover: #0d5e58;
+  --accent-soft: #ccfbf1;
+  --accent-soft-text: #115e59;
+  --accent-on: #ffffff;
+
+  --radius-card: 24px;
+  --radius-control: 16px;
+}
+
+.dark {
+  --bg-canvas: #0c1214;
+  --bg-surface: #141c1f;
+  --bg-surface-tonal: #1b272b;
+  --bg-surface-elevated: #192327;
+  --border-subtle: rgba(248, 250, 252, 0.09);
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --accent: #2dd4bf;
+  --accent-hover: #5eead4;
+  --accent-soft: rgba(45, 212, 191, 0.16);
+  --accent-soft-text: #99f6e4;
+  --accent-on: #042f2e;
+}
+
+/* Material You Dynamic Palettes */
+[data-palette="coral"] {
+  --accent: #c2410c;
+  --accent-hover: #9a3412;
+  --accent-soft: #ffedd5;
+  --accent-soft-text: #9a3412;
+  --bg-surface-tonal: #f6efeb;
+}
+.dark[data-palette="coral"],
+.dark [data-palette="coral"] {
+  --accent: #fb923c;
+  --accent-hover: #fdba74;
+  --accent-soft: rgba(251, 146, 60, 0.16);
+  --accent-soft-text: #fed7aa;
+  --bg-surface-tonal: #231b18;
+}
+
+[data-palette="indigo"] {
+  --accent: #3730a3;
+  --accent-hover: #312e81;
+  --accent-soft: #e0e7ff;
+  --accent-soft-text: #312e81;
+  --bg-surface-tonal: #eef0f8;
+}
+.dark[data-palette="indigo"],
+.dark [data-palette="indigo"] {
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-soft: rgba(129, 140, 248, 0.18);
+  --accent-soft-text: #c7d2fe;
+  --bg-surface-tonal: #191c2b;
+}
+
+[data-palette="emerald"] {
+  --accent: #15803d;
+  --accent-hover: #166534;
+  --accent-soft: #dcfce7;
+  --accent-soft-text: #166534;
+  --bg-surface-tonal: #ebf3ed;
+}
+.dark[data-palette="emerald"],
+.dark [data-palette="emerald"] {
+  --accent: #4ade80;
+  --accent-hover: #86efac;
+  --accent-soft: rgba(74, 222, 128, 0.16);
+  --accent-soft-text: #bbf7d0;
+  --bg-surface-tonal: #15231a;
+}
+
+[data-palette="contrast"] {
+  --bg-canvas: #ffffff;
+  --bg-surface: #f8fafc;
+  --bg-surface-tonal: #e2e8f0;
+  --border-subtle: rgba(15, 23, 42, 0.22);
+  --text-primary: #020617;
+  --text-secondary: #1e293b;
+  --text-muted: #334155;
+  --accent: #0f172a;
+  --accent-hover: #1e293b;
+  --accent-soft: #fef08a;
+  --accent-soft-text: #020617;
+  --accent-on: #ffffff;
+}
+.dark[data-palette="contrast"],
+.dark [data-palette="contrast"] {
+  --bg-canvas: #000000;
+  --bg-surface: #0f172a;
+  --bg-surface-tonal: #1e293b;
+  --border-subtle: rgba(248, 250, 252, 0.25);
+  --text-primary: #ffffff;
+  --text-secondary: #f1f5f9;
+  --text-muted: #cbd5e1;
+  --accent: #facc15;
+  --accent-hover: #fde047;
+  --accent-soft: rgba(250, 204, 21, 0.22);
+  --accent-soft-text: #fef08a;
+  --accent-on: #020617;
+}
+
+/* Corner Density */
+[data-corners="compact"] {
+  --radius-card: 14px;
+  --radius-control: 10px;
+}
+
+/* Accessible Font Scaling */
+html[data-font-scale="normal"] {
+  font-size: 16px;
+}
+html[data-font-scale="large"] {
+  font-size: 18px;
+}
+html[data-font-scale="xlarge"] {
+  font-size: 20px;
+}
+
+@layer base {
+  html,
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  .dark body {
+    letter-spacing: 0.005em;
+  }
+}
+
+.font-mono-tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom subtle scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
