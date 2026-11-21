@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">یادبان</string>
+    <string name="title_activity_main">یادبان</string>
+    <string name="package_name">ir.yadban.app</string>
+    <string name="custom_url_scheme">ir.yadban.app</string>
+    <string name="widget_today_label">برنامه امروز یادبان</string>
+    <string name="widget_quick_label">ثبت فوری و یادآور بعدی یادبان</string>
+    <string name="shortcut_quick_add">ثبت فوری</string>
+    <string name="shortcut_voice_add">ضبط صوتی آفلاین</string>
+    <string name="shortcut_vault">صندوق ذهن</string>
+</resources>

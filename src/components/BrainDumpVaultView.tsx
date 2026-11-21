@@ -14,6 +14,7 @@ import {
 import { MemoryItem } from '../types/memory';
 import { CATEGORY_META, getLocalDateKey, toPersianDigits } from '../utils/dateFa';
 import { CategoryIcon } from './CategoryIcon';
+import { VoiceNotePlayer } from './VoiceNotePlayer';
 
 interface BrainDumpVaultViewProps {
   items: MemoryItem[];
@@ -223,6 +224,13 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
                     <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
                       {item.notes}
                     </p>
+                  )}
+
+                  {item.voiceNoteId && (
+                    <VoiceNotePlayer
+                      voiceNoteId={item.voiceNoteId}
+                      durationSec={item.voiceDurationSec}
+                    />
                   )}
                 </div>
 

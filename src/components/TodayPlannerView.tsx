@@ -25,6 +25,7 @@ import {
 } from '../utils/dateFa';
 import { CategoryIcon } from './CategoryIcon';
 import { MonthlyCalendarWidget } from './MonthlyCalendarWidget';
+import { VoiceNotePlayer } from './VoiceNotePlayer';
 
 interface TodayPlannerViewProps {
   items: MemoryItem[];
@@ -476,6 +477,13 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
                           )}
                           {item.locationHint || item.notes}
                         </p>
+                      )}
+
+                      {item.voiceNoteId && (
+                        <VoiceNotePlayer
+                          voiceNoteId={item.voiceNoteId}
+                          durationSec={item.voiceDurationSec}
+                        />
                       )}
                     </div>
                   </div>

@@ -11,6 +11,7 @@ import {
   toPersianDigits,
 } from '../utils/dateFa';
 import { CategoryIcon } from './CategoryIcon';
+import { VoiceRecorderControl } from './VoiceRecorderControl';
 
 interface QuickCaptureModalProps {
   isOpen: boolean;
@@ -50,6 +51,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   const [contactName, setContactName] = useState('');
   const [locationHint, setLocationHint] = useState('');
   const [pinnedToWidget, setPinnedToWidget] = useState(false);
+  const [voiceNoteId, setVoiceNoteId] = useState<string | undefined>(undefined);
+  const [voiceDurationSec, setVoiceDurationSec] = useState<number | undefined>(undefined);
   const [userTouchedCategory, setUserTouchedCategory] = useState(false);
 
   useEffect(() => {
@@ -67,6 +70,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
       setContactName(initialItem.contactName || '');
       setLocationHint(initialItem.locationHint || '');
       setPinnedToWidget(initialItem.pinnedToWidget);
+      setVoiceNoteId(initialItem.voiceNoteId);
+      setVoiceDurationSec(initialItem.voiceDurationSec);
       setUserTouchedCategory(true);
     } else {
       setTitle(initialRawText);
@@ -80,6 +85,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
       setContactName('');
       setLocationHint('');
       setPinnedToWidget(false);
+      setVoiceNoteId(undefined);
+      setVoiceDurationSec(undefined);
       setUserTouchedCategory(false);
     }
   }, [isOpen, initialItem, defaultDateKey, initialRawText]);
@@ -128,10 +135,13 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedTitle = title.trim();
-    if (!trimmedTitle && !phoneNumber.trim()) return;
+    if (!trimmedTitle && !phoneNumber.trim() && !voiceNoteId) return;
 
     const finalTitle =
-      trimmedTitle || `تماس با ${contactName.trim() || toPersianDigits(phoneNumber.trim())}`;
+      trimmedTitle ||
+      (phoneNumber.trim()
+        ? `تماس با ${contactName.trim() || toPersianDigits(phoneNumber.trim())}`
+        : 'یادداشت صوتی آفلاین');
     const cleanPhone = toEnglishDigits(phoneNumber).replace(/[^\d+]/g, '');
     const timeBlock: TimeBlock = timeStr ? getTimeBlockFromTime(timeStr) : 'anytime';
 
@@ -151,6 +161,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         contactName: contactName.trim() || undefined,
         locationHint: locationHint.trim() || undefined,
         pinnedToWidget,
+        voiceNoteId,
+        voiceDurationSec,
       },
       initialItem?.id
     );
@@ -403,6 +415,16 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* Offline Voice Memo Attachment */}
+          <VoiceRecorderControl
+            voiceNoteId={voiceNoteId}
+            voiceDurationSec={voiceDurationSec}
+            onChange={(id, dur) => {
+              setVoiceNoteId(id);
+              setVoiceDurationSec(dur);
+            }}
+          />
 
           {/* Optional extra details */}
           <div>

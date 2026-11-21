@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import {
   Archive,
   CalendarCheck,
@@ -13,7 +11,6 @@ import { BrainDumpVaultView } from './components/BrainDumpVaultView';
 import { FloatingMiniWidget } from './components/FloatingMiniWidget';
 import { HeadsUpReminderBanner } from './components/HeadsUpReminderBanner';
 import { PersonalizationSettingsView } from './components/PersonalizationSettingsView';
-import { OfflineIndicator } from './components/PWAInstallButton';
 import { QuickCaptureModal } from './components/QuickCaptureModal';
 import { TodayPlannerView } from './components/TodayPlannerView';
 import { WidgetsStudioView } from './components/WidgetsStudioView';
@@ -31,6 +28,13 @@ import {
 } from './types/memory';
 import { playChime, sendBrowserNotification } from './utils/audioAndVoice';
 import { getLocalDateKey, parseQuickCapture, toPersianDigits } from './utils/dateFa';
+import {
+  isNativeAndroidApp,
+  loadNativeOfflineData,
+  syncOfflineStateAndAlarms,
+  triggerNativeAlertNotification,
+} from './utils/nativeBridge';
+import { deleteVoiceBlob } from './utils/voiceStorage';
 
 const STORAGE_ITEMS_KEY = 'yadban_memory_items_v1';
 const STORAGE_SETTINGS_KEY = 'yadban_user_settings_v1';
@@ -68,8 +72,72 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState('');
 
   const firedKeysRef = useRef<Set<string>>(new Set());
+  const nativeBootLoadedRef = useRef(false);
 
-  // Persist to localStorage
+  // Hydrate from Android native SQLite database on launch & resume (syncs widget/notification actions)
+  const pullFromNativeDb = useCallback(async () => {
+    if (!isNativeAndroidApp()) return;
+    const { items: nativeItems, settings: nativeSettings } = await loadNativeOfflineData();
+    if (nativeItems && Array.isArray(nativeItems) && nativeItems.length > 0) {
+      setItems(nativeItems);
+    }
+    if (nativeSettings) {
+      setSettings((prev) => ({ ...prev, ...nativeSettings }));
+    }
+    nativeBootLoadedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    void pullFromNativeDb();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void pullFromNativeDb();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [pullFromNativeDb]);
+
+  // Handle native Android deep links / widget tap actions (?action=quick-add, ?tab=...)
+  useEffect(() => {
+    const applyActionAndTab = (actionParam?: string | null, tabParam?: string | null) => {
+      if (actionParam === 'quick-add' || actionParam === 'voice-add') {
+        setEditingItem(null);
+        setPrefillText('');
+        setModalOpen(true);
+      }
+      if (
+        tabParam === 'today' ||
+        tabParam === 'vault' ||
+        tabParam === 'widgets' ||
+        tabParam === 'settings'
+      ) {
+        setActiveTab(tabParam);
+      }
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const actionParam = params.get('action');
+    const tabParam = params.get('tab');
+    applyActionAndTab(actionParam, tabParam);
+
+    if (actionParam || tabParam) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
+    const handleNativeIntent = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ action?: string; tab?: string }>).detail;
+      if (detail) {
+        applyActionAndTab(detail.action, detail.tab);
+      }
+    };
+
+    window.addEventListener('yadban-native-intent', handleNativeIntent);
+    return () => window.removeEventListener('yadban-native-intent', handleNativeIntent);
+  }, []);
+
+  // Persist offline to localStorage + Android SQLite / AlarmManager / Home Widgets
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_ITEMS_KEY, JSON.stringify(items));
@@ -94,69 +162,12 @@ export default function App() {
     }
   }, [widgets]);
 
-  // Native Android reminders are scheduled by the OS, so they can fire when the app is closed.
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    let cancelled = false;
-    const syncNativeReminders = async () => {
-      try {
-        if (!settings.notificationsEnabled) {
-          const pending = await LocalNotifications.getPending();
-          if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map(({ id }) => ({ id })) });
-          return;
-        }
-        let permission = await LocalNotifications.checkPermissions();
-        if (permission.display === 'prompt' || permission.display === 'prompt-with-rationale') {
-          permission = await LocalNotifications.requestPermissions();
-        }
-        if (cancelled || permission.display !== 'granted') return;
-        const pending = await LocalNotifications.getPending();
-        if (pending.notifications.length) {
-          await LocalNotifications.cancel({ notifications: pending.notifications.map(({ id }) => ({ id })) });
-        }
-        const now = new Date();
-        const scheduled: Array<{ title: string; body: string; id: number; schedule: { at: Date; allowWhileIdle: boolean }; extra: { itemId: string; isPreReminder: boolean } }> = [];
-        const idFor = (value: string) => {
-          let hash = 2166136261;
-          for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
-          return (hash >>> 0) % 2000000000 + 1;
-        };
-        const add = (item: MemoryItem, at: Date, isPreReminder: boolean, suffix: string) => {
-          if (at.getTime() <= now.getTime() || scheduled.length >= 450) return;
-          scheduled.push({
-            id: idFor(item.id + suffix),
-            title: isPreReminder ? 'پیش‌یادآوری یادبان' : 'یادآور هوشمند یادبان',
-            body: isPreReminder ? `${item.title} — ${toPersianDigits(item.preReminderMinutes)} دقیقه مانده` : item.title,
-            schedule: { at, allowWhileIdle: true },
-            extra: { itemId: item.id, isPreReminder },
-          });
-        };
-        for (const item of items) {
-          if ((!item.repeatDaily && item.completed) || !item.timeStr) continue;
-          const [hour, minute] = item.timeStr.split(':').map(Number);
-          if (!Number.isFinite(hour) || !Number.isFinite(minute)) continue;
-          const base = item.repeatDaily ? new Date(now.getFullYear(), now.getMonth(), now.getDate()) : new Date(item.dateStr + 'T00:00:00');
-          if (!item.repeatDaily && (!item.dateStr || Number.isNaN(base.getTime()))) continue;
-          const count = item.repeatDaily ? 30 : 1;
-          for (let day = 0; day < count; day++) {
-            const at = new Date(base.getFullYear(), base.getMonth(), base.getDate() + day, hour, minute, 0, 0);
-            const dateKey = getLocalDateKey(at);
-            if (item.repeatDaily && item.completedDates.includes(dateKey)) continue;
-            add(item, at, false, `-${dateKey}-main`);
-            if (item.preReminderMinutes > 0) add(item, new Date(at.getTime() - item.preReminderMinutes * 60000), true, `-${dateKey}-pre`);
-          }
-        }
-        for (const item of items) {
-          if (item.snoozedUntil && item.snoozedUntil > now.getTime()) add(item, new Date(item.snoozedUntil), false, `-snooze-${item.snoozedUntil}`);
-        }
-        if (!cancelled && scheduled.length) await LocalNotifications.schedule({ notifications: scheduled });
-      } catch (error) {
-        console.warn('Native reminder scheduling failed', error);
-      }
-    };
-    void syncNativeReminders();
-    return () => { cancelled = true; };
-  }, [items, settings.notificationsEnabled]);
+    const timer = setTimeout(() => {
+      void syncOfflineStateAndAlarms(items, settings);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [items, settings]);
 
   // Apply Material You palette, dark mode, font scale, and corner tokens to <html>
   useEffect(() => {
@@ -177,24 +188,33 @@ export default function App() {
   }, []);
 
   const triggerAlert = useCallback(
-    (item: MemoryItem, isPreReminder: boolean) => {
+    async (item: MemoryItem, isPreReminder: boolean) => {
       const alertObj: ActiveReminderAlert = {
         item,
         triggeredAt: Date.now(),
         isPreReminder,
       };
       setActiveAlert(alertObj);
-      playChime(settings.chimeType);
+      void playChime(settings.chimeType);
 
       const notifTitle = isPreReminder
         ? `پیش‌یادآوری (${toPersianDigits(item.preReminderMinutes)} دقیقه مانده)`
         : 'یادآور هوشمند یادبان';
-      sendBrowserNotification(notifTitle, item.title, item.id);
+
+      const sentNative = await triggerNativeAlertNotification(
+        item.id,
+        notifTitle,
+        item.title,
+        settings.chimeType
+      );
+      if (!sentNative) {
+        sendBrowserNotification(notifTitle, item.title, item.id);
+      }
     },
     [settings.chimeType]
   );
 
-  // Smart Background Scheduler (runs every 15 seconds)
+  // Foreground In-App Offline Scheduler (runs every 15 seconds while app is open)
   useEffect(() => {
     const checkReminders = () => {
       const now = new Date();
@@ -215,7 +235,7 @@ export default function App() {
             setItems((prev) =>
               prev.map((x) => (x.id === item.id ? { ...x, snoozedUntil: undefined } : x))
             );
-            triggerAlert(item, false);
+            void triggerAlert(item, false);
             break;
           }
         }
@@ -231,7 +251,7 @@ export default function App() {
           const key = `${item.id}-exact-${todayKey}-${item.timeStr}`;
           if (!firedKeysRef.current.has(key)) {
             firedKeysRef.current.add(key);
-            triggerAlert(item, false);
+            void triggerAlert(item, false);
             break;
           }
         }
@@ -240,7 +260,7 @@ export default function App() {
           const preKey = `${item.id}-pre-${todayKey}-${item.timeStr}`;
           if (!firedKeysRef.current.has(preKey)) {
             firedKeysRef.current.add(preKey);
-            triggerAlert(item, true);
+            void triggerAlert(item, true);
             break;
           }
         }
@@ -254,7 +274,7 @@ export default function App() {
           const nudgeKey = `${item.id}-nudge-${todayKey}-${curMinOfDay}`;
           if (!firedKeysRef.current.has(nudgeKey)) {
             firedKeysRef.current.add(nudgeKey);
-            triggerAlert(item, false);
+            void triggerAlert(item, false);
             break;
           }
         }
@@ -281,7 +301,7 @@ export default function App() {
         createdAt: Date.now(),
       };
       setItems((prev) => [created, ...prev]);
-      showToast('در حافظه یادبان ثبت شد');
+      showToast('در حافظه آفلاین یادبان ثبت شد');
     }
   };
 
@@ -338,10 +358,14 @@ export default function App() {
       prev.map((item) => (item.id === id ? { ...item, snoozedUntil: until } : item))
     );
     setActiveAlert(null);
-    showToast(`یادآور برای ${toPersianDigits(minutes)} دقیقه بعد تنظیم شد`);
+    showToast(`آلارم برای ${toPersianDigits(minutes)} دقیقه بعد تنظیم شد`);
   };
 
   const handleDeleteItem = (id: string) => {
+    const target = items.find((i) => i.id === id);
+    if (target?.voiceNoteId) {
+      void deleteVoiceBlob(target.voiceNoteId);
+    }
     setItems((prev) => prev.filter((item) => item.id !== id));
     showToast('مورد حذف شد');
   };
@@ -369,7 +393,7 @@ export default function App() {
       items.find((i) => !i.completed) ||
       items[0] || {
         id: 'test',
-        title: 'تست اعلان هوشمند یادبان',
+        title: 'تست آلارم هوشمند یادبان',
         category: 'health',
         dateStr: getLocalDateKey(new Date()),
         timeStr: '12:00',
@@ -381,7 +405,7 @@ export default function App() {
         pinnedToWidget: false,
         createdAt: Date.now(),
       };
-    triggerAlert(sample, false);
+    void triggerAlert(sample, false);
   };
 
   const dockWidgets = useMemo(
@@ -559,6 +583,8 @@ export default function App() {
               setPrefillText('');
               setModalOpen(true);
             }}
+            onNavigateTab={(tab) => setActiveTab(tab)}
+            onShowToast={showToast}
           />
         ) : (
           <PersonalizationSettingsView
@@ -627,9 +653,6 @@ export default function App() {
         defaultDateKey={selectedDateKey}
         initialRawText={prefillText}
       />
-
-      {/* Offline Status Banner */}
-      <OfflineIndicator />
 
       {/* Subtle Action Feedback Toast */}
       {toastMsg && (

@@ -1,0 +1,9 @@
+{
+	"appId": "ir.yadban.app",
+	"appName": "یادبان",
+	"webDir": "dist",
+	"android": {
+		"allowMixedContent": false,
+		"backgroundColor": "#0F766E"
+	}
+}

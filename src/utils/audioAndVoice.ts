@@ -87,3 +87,30 @@ export function sendBrowserNotification(title: string, body: string, tag?: strin
     // Fallback ignored in restricted frames
   }
 }
+
+export function isAlertAudioUnlocked(): boolean {
+  if (!sharedAudioCtx) return false;
+  return sharedAudioCtx.state === 'running';
+}
+
+export async function unlockAlertSoundAndVibration(
+  chimeType: UserSettings['chimeType']
+): Promise<boolean> {
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === 'suspended') {
+    try {
+      await ctx.resume();
+    } catch {
+      // ignore resume error
+    }
+  }
+  await playChime(chimeType === 'none' ? 'gentle' : chimeType);
+  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    try {
+      navigator.vibrate([140, 70, 140]);
+    } catch {
+      // ignore unsupported vibrate
+    }
+  }
+  return Boolean(ctx && ctx.state === 'running');
+}

@@ -38,6 +38,16 @@ export interface MemoryItem {
   pinnedToWidget: boolean;
   createdAt: number;
   snoozedUntil?: number;
+  voiceNoteId?: string;
+  voiceDurationSec?: number;
+}
+
+export interface NativePermissionsStatus {
+  isNativeAndroid: boolean;
+  notifications: 'granted' | 'denied' | 'prompt';
+  exactAlarm: 'granted' | 'denied';
+  microphone: 'granted' | 'denied' | 'prompt' | 'unsupported';
+  batteryIgnored: boolean;
 }
 
 export interface WidgetConfig {

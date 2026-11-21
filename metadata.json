@@ -1,6 +1,6 @@
 {
   "name": "یادبان — دستیار هوشمند حافظه و برنامه‌ریزی",
   "description": "برنامه جامع برنامه‌ریزی روزانه، ثبت سریع یادداشت و شماره تلفن، نوتیفیکیشن هوشمند و ویجت اختصاصی برای تقویت حافظه.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

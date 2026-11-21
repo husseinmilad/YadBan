@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  Archive,
   ArrowDown,
   ArrowUp,
+  BatteryFull,
+  CalendarCheck,
   Eye,
   EyeOff,
-  LayoutGrid,
   Maximize2,
   Minimize2,
   Pin,
+  Plus,
+  RefreshCw,
+  Smartphone,
+  Wifi,
 } from 'lucide-react';
 import { MemoryItem, UserSettings, WidgetConfig, WidgetStyle } from '../types/memory';
+import { toPersianDigits } from '../utils/dateFa';
+import { isNativeAndroidApp, refreshNativeHomeWidgets } from '../utils/nativeBridge';
 import { AndroidWidgetRenderer } from './AndroidWidgetRenderer';
 
 interface WidgetsStudioViewProps {
@@ -21,6 +29,8 @@ interface WidgetsStudioViewProps {
   onToggleComplete: (id: string, dateKey: string) => void;
   onQuickAdd: (rawText: string) => void;
   onOpenCaptureModal: () => void;
+  onNavigateTab?: (tab: 'today' | 'vault') => void;
+  onShowToast?: (msg: string) => void;
 }
 
 export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
@@ -32,10 +42,28 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
   onToggleComplete,
   onQuickAdd,
   onOpenCaptureModal,
+  onNavigateTab,
+  onShowToast,
 }) => {
   const [wallpaperError, setWallpaperError] = useState(false);
   const sortedWidgets = [...widgets].sort((a, b) => a.order - b.order);
   const enabledWidgets = sortedWidgets.filter((w) => w.enabled);
+
+  const nowTimeLabel = useMemo(() => {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    return toPersianDigits(`${hh}:${mm}`);
+  }, []);
+
+  const handleSyncHomeWidgets = async () => {
+    const ok = await refreshNativeHomeWidgets(items);
+    if (ok) {
+      onShowToast?.('ویجت‌های صفحه اول گوشی همگام‌سازی شدند');
+    } else {
+      onShowToast?.('در نسخه نصب‌شده APK اندروید، ویجت صفحه اول گوشی بلافاصله بروزرسانی می‌شود');
+    }
+  };
 
   const toggleEnabled = (id: string) => {
     onUpdateWidgets(
@@ -72,81 +100,151 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header + Floating Mini-Widget Toggle */}
-      <section className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Header + Home Screen & Floating Widget Actions */}
+      <section className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-[var(--text-primary)]">
-            استودیوی ویجت اختصاصی
+            ویجت‌های صفحه اول گوشی اندروید
           </h1>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            ویجت‌های زنده را بچینید، اندازه و سبک ظاهری آن‌ها را تغییر دهید و مستقیم با آن‌ها کار کنید.
+            چیدمان ویجت‌های صفحه اصلی گوشی خود را شخصی‌سازی و با لانچر بومی اندروید همگام کنید.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onToggleFloatingWidget}
-          className={`min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] px-5 text-sm font-semibold border transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-            settings.showFloatingWidget
-              ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
-              : 'bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] border-[var(--border-subtle)]'
-          }`}
-        >
-          <Pin className="w-4 h-4" />
-          <span>
-            {settings.showFloatingWidget ? 'ویجت شناور روی صفحه فعال است' : 'نمایش ویجت شناور در همه صفحات'}
-          </span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleSyncHomeWidgets}
+            className="min-h-[46px] inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] border border-[var(--border-subtle)] px-4 text-xs sm:text-sm font-semibold hover:opacity-90 transition-all cursor-pointer whitespace-nowrap"
+          >
+            <RefreshCw className="w-4 h-4 text-[var(--accent)]" />
+            <span>همگام‌سازی ویجت صفحه اول</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onToggleFloatingWidget}
+            className={`min-h-[46px] inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] px-4 text-xs sm:text-sm font-semibold border transition-all cursor-pointer whitespace-nowrap ${
+              settings.showFloatingWidget
+                ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
+                : 'bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] border-[var(--border-subtle)]'
+            }`}
+          >
+            <Pin className="w-4 h-4" />
+            <span>
+              {settings.showFloatingWidget ? 'ویجت شناور فعال است' : 'ویجت شناور روی صفحه'}
+            </span>
+          </button>
+        </div>
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Interactive Widget Board */}
-        <section className="lg:col-span-8 relative rounded-[32px] overflow-hidden border border-[var(--border-subtle)] shadow-lg min-h-[540px]">
-          <div className="absolute inset-0 bg-gradient-to-br from-teal-900/30 via-slate-900/20 to-slate-800/40">
-            {!wallpaperError && (
-              <img
-                src={wallpaperSrc}
-                alt="پس‌زمینه متریال"
-                referrerPolicy="no-referrer"
-                onError={() => setWallpaperError(true)}
-                className="w-full h-full object-cover"
-              />
-            )}
-            <div className="absolute inset-0 bg-black/10 dark:bg-black/25" />
-          </div>
-
-          <div className="relative z-10 p-5 sm:p-7 space-y-5">
-            <div className="flex items-center justify-between text-xs font-semibold text-white drop-shadow">
-              <span className="inline-flex items-center gap-1.5">
-                <LayoutGrid className="w-4 h-4" />
-                چیدمان زنده ویجت‌ها
-              </span>
-              <span>Material You</span>
+        {/* Interactive Phone Home-Screen Launcher Canvas */}
+        <section className="lg:col-span-8 space-y-4">
+          <div className="relative rounded-[36px] overflow-hidden border-4 border-slate-900/15 dark:border-white/15 shadow-xl min-h-[600px] flex flex-col justify-between">
+            <div className="absolute inset-0 bg-gradient-to-br from-teal-900/35 via-slate-900/25 to-slate-800/45">
+              {!wallpaperError && (
+                <img
+                  src={wallpaperSrc}
+                  alt="پس‌زمینه صفحه اصلی گوشی"
+                  referrerPolicy="no-referrer"
+                  onError={() => setWallpaperError(true)}
+                  className="w-full h-full object-cover"
+                />
+              )}
+              <div className="absolute inset-0 bg-black/15 dark:bg-black/30" />
             </div>
 
-            {enabledWidgets.length === 0 ? (
-              <div className="rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 text-center">
-                <p className="text-base font-bold text-[var(--text-primary)]">
-                  همه ویجت‌ها مخفی هستند
-                </p>
-                <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                  از پنل تنظیمات ویجت‌ها حداقل یک ویجت را فعال کنید.
-                </p>
+            {/* Phone Status Bar */}
+            <div className="relative z-10 px-6 pt-4 pb-2 flex items-center justify-between text-xs font-bold text-white drop-shadow">
+              <span className="font-mono-tabular">{nowTimeLabel}</span>
+              <span className="opacity-90">صفحه اصلی گوشی · Material You</span>
+              <div className="flex items-center gap-2">
+                <Wifi className="w-3.5 h-3.5" />
+                <BatteryFull className="w-4 h-4" />
               </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {enabledWidgets.map((widget) => (
-                  <AndroidWidgetRenderer
-                    key={widget.id}
-                    widget={widget}
-                    items={items}
-                    onToggleComplete={onToggleComplete}
-                    onQuickAdd={onQuickAdd}
-                    onOpenCaptureModal={onOpenCaptureModal}
-                  />
-                ))}
+            </div>
+
+            {/* Widgets Grid */}
+            <div className="relative z-10 px-5 sm:px-7 py-3 flex-1">
+              {enabledWidgets.length === 0 ? (
+                <div className="rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 text-center">
+                  <p className="text-base font-bold text-[var(--text-primary)]">
+                    همه ویجت‌ها مخفی هستند
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                    از پنل تنظیمات ویجت‌ها حداقل یک ویجت را فعال کنید.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {enabledWidgets.map((widget) => (
+                    <AndroidWidgetRenderer
+                      key={widget.id}
+                      widget={widget}
+                      items={items}
+                      onToggleComplete={onToggleComplete}
+                      onQuickAdd={onQuickAdd}
+                      onOpenCaptureModal={onOpenCaptureModal}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Phone Home Screen App Shortcuts Dock */}
+            <div className="relative z-10 px-5 pb-5 pt-3">
+              <div className="mx-auto max-w-md rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-white/40 dark:border-white/10 px-4 py-2.5 flex items-center justify-around gap-2 shadow-lg">
+                <button
+                  type="button"
+                  onClick={onOpenCaptureModal}
+                  className="flex flex-col items-center gap-1 min-w-[68px] py-1 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                >
+                  <span className="w-10 h-10 rounded-2xl bg-[var(--accent)] text-[var(--accent-on)] flex items-center justify-center shadow-sm">
+                    <Plus className="w-5 h-5" />
+                  </span>
+                  <span className="text-[11px] font-bold text-[var(--text-primary)]">ثبت فوری</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab?.('today')}
+                  className="flex flex-col items-center gap-1 min-w-[68px] py-1 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                >
+                  <span className="w-10 h-10 rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-soft-text)] flex items-center justify-center">
+                    <CalendarCheck className="w-5 h-5" />
+                  </span>
+                  <span className="text-[11px] font-bold text-[var(--text-primary)]">برنامه امروز</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab?.('vault')}
+                  className="flex flex-col items-center gap-1 min-w-[68px] py-1 rounded-2xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                >
+                  <span className="w-10 h-10 rounded-2xl bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] flex items-center justify-center">
+                    <Archive className="w-5 h-5" />
+                  </span>
+                  <span className="text-[11px] font-bold text-[var(--text-primary)]">صندوق ذهن</span>
+                </button>
               </div>
-            )}
+            </div>
+          </div>
+
+          {/* Native Android Widget Placement Guide */}
+          <div className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-4 sm:p-5 flex items-start gap-3">
+            <span className="w-10 h-10 rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-soft-text)] flex items-center justify-center shrink-0">
+              <Smartphone className="w-5 h-5" />
+            </span>
+            <div>
+              <p className="text-sm font-bold text-[var(--text-primary)]">
+                افزودن ویجت واقعی روی صفحه اول گوشی (پس از نصب APK)
+              </p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
+                روی فضای خالی صفحه اصلی گوشی اندروید لمس طولانی کنید ← گزینه Widgets را بزنید ← یکی از دو ویجت بومی «برنامه امروز یادبان» یا «ثبت فوری یادبان» را روی صفحه بکشید.
+                {isNativeAndroidApp() ? ' همگام‌سازی بومی هم‌اکنون فعال است.' : ''}
+              </p>
+            </div>
           </div>
         </section>
 

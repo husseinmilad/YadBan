@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="quick_add"
+        android:shortcutShortLabel="@string/shortcut_quick_add">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ir.yadban.app.MainActivity"
+            android:targetPackage="ir.yadban.app">
+            <extra android:name="yadban_action" android:value="quick-add" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="voice_add"
+        android:shortcutShortLabel="@string/shortcut_voice_add">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ir.yadban.app.MainActivity"
+            android:targetPackage="ir.yadban.app">
+            <extra android:name="yadban_action" android:value="voice-add" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="vault"
+        android:shortcutShortLabel="@string/shortcut_vault">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="ir.yadban.app.MainActivity"
+            android:targetPackage="ir.yadban.app">
+            <extra android:name="yadban_tab" android:value="vault" />
+        </intent>
+    </shortcut>
+</shortcuts>
