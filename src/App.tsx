@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import {
   Archive,
   CalendarCheck,
@@ -91,6 +93,66 @@ export default function App() {
       // ignore
     }
   }, [widgets]);
+
+  // Native Android reminders are scheduled by the OS, so they can fire when the app is closed.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !settings.notificationsEnabled) return;
+    let cancelled = false;
+    const syncNativeReminders = async () => {
+      try {
+        let permission = await LocalNotifications.checkPermissions();
+        if (permission.display === 'prompt' || permission.display === 'prompt-with-rationale') {
+          permission = await LocalNotifications.requestPermissions();
+        }
+        if (cancelled || permission.display !== 'granted') return;
+        const pending = await LocalNotifications.getPending();
+        if (pending.notifications.length) {
+          await LocalNotifications.cancel({ notifications: pending.notifications.map(({ id }) => ({ id })) });
+        }
+        const now = new Date();
+        const scheduled: Array<{ title: string; body: string; id: number; schedule: { at: Date; allowWhileIdle: boolean }; extra: { itemId: string; isPreReminder: boolean } }> = [];
+        const idFor = (value: string) => {
+          let hash = 2166136261;
+          for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+          return (hash >>> 0) % 2000000000 + 1;
+        };
+        const add = (item: MemoryItem, at: Date, isPreReminder: boolean, suffix: string) => {
+          if (at.getTime() <= now.getTime() || scheduled.length >= 450) return;
+          scheduled.push({
+            id: idFor(item.id + suffix),
+            title: isPreReminder ? 'پیش‌یادآوری یادبان' : 'یادآور هوشمند یادبان',
+            body: isPreReminder ? `${item.title} — ${toPersianDigits(item.preReminderMinutes)} دقیقه مانده` : item.title,
+            schedule: { at, allowWhileIdle: true },
+            extra: { itemId: item.id, isPreReminder },
+          });
+        };
+        for (const item of items) {
+          const completedToday = item.repeatDaily ? item.completedDates.includes(getLocalDateKey(now)) : item.completed;
+          if (completedToday || !item.timeStr) continue;
+          const [hour, minute] = item.timeStr.split(':').map(Number);
+          if (!Number.isFinite(hour) || !Number.isFinite(minute)) continue;
+          const base = item.repeatDaily ? new Date(now.getFullYear(), now.getMonth(), now.getDate()) : new Date(item.dateStr + 'T00:00:00');
+          if (!item.repeatDaily && (!item.dateStr || Number.isNaN(base.getTime()))) continue;
+          const count = item.repeatDaily ? 30 : 1;
+          for (let day = 0; day < count; day++) {
+            const at = new Date(base.getFullYear(), base.getMonth(), base.getDate() + day, hour, minute, 0, 0);
+            const dateKey = getLocalDateKey(at);
+            if (item.repeatDaily && item.completedDates.includes(dateKey)) continue;
+            add(item, at, false, `-${dateKey}-main`);
+            if (item.preReminderMinutes > 0) add(item, new Date(at.getTime() - item.preReminderMinutes * 60000), true, `-${dateKey}-pre`);
+          }
+        }
+        for (const item of items) {
+          if (item.snoozedUntil && item.snoozedUntil > now.getTime()) add(item, new Date(item.snoozedUntil), false, `-snooze-${item.snoozedUntil}`);
+        }
+        if (!cancelled && scheduled.length) await LocalNotifications.schedule({ notifications: scheduled });
+      } catch (error) {
+        console.warn('Native reminder scheduling failed', error);
+      }
+    };
+    void syncNativeReminders();
+    return () => { cancelled = true; };
+  }, [items, settings.notificationsEnabled]);
 
   // Apply Material You palette, dark mode, font scale, and corner tokens to <html>
   useEffect(() => {
