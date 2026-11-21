@@ -87,7 +87,7 @@
   --accent: #4ade80;
   --accent-hover: #86efac;
   --accent-soft: rgba(74, 222, 128, 0.16);
-  --accent-soft-text: #bbf7d0;
+  --accent-soft-text: #bbf7d8;
   --bg-surface-tonal: #15231a;
 }
 
@@ -128,54 +128,46 @@
 }
 
 /* Accessible Font Scaling */
-html[data-font-scale="normal"] {
-  font-size: 16px;
-}
-html[data-font-scale="large"] {
-  font-size: 18px;
-}
-html[data-font-scale="xlarge"] {
-  font-size: 20px;
-}
+html[data-font-scale="normal"] { font-size: 16px; }
+html[data-font-scale="large"] { font-size: 18px; }
+html[data-font-scale="xlarge"] { font-size: 20px; }
 
 @layer base {
-  html,
-  body {
+  html, body {
     font-family: var(--font-sans);
     background-color: var(--bg-canvas);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     overflow-x: hidden;
+    margin: 0;
   }
 
-  .dark body {
-    letter-spacing: 0.005em;
-  }
+  .dark body { letter-spacing: 0.005em; }
 }
+
+/* Keep the WebView content clear of Android status/navigation bars. */
+html {
+  min-height: 100%;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
+}
+body { min-height: 100dvh; }
+#root { min-height: 100dvh; }
 
 .font-mono-tabular {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
-
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
+.tabular-nums { font-variant-numeric: tabular-nums; }
 
 /* Custom subtle scrollbars */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
