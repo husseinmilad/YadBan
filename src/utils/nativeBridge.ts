@@ -40,6 +40,14 @@ interface YadbanNativePluginInterface {
   requestMicrophonePermission(): Promise<{ status: 'granted' | 'denied' | 'prompt' }>;
   requestBatteryOptimizationExemption(): Promise<{ batteryIgnored: boolean }>;
   startSpeechToText(): Promise<{ ok: boolean; text?: string; reason?: string }>;
+  exportBackupFile(options: {
+    fileName: string;
+    jsonContent: string;
+  }): Promise<{ ok: boolean; cancelled?: boolean; method?: string; error?: string }>;
+  shareBackupFile(options: {
+    fileName: string;
+    jsonContent: string;
+  }): Promise<{ ok: boolean; error?: string }>;
 }
 
 const YadbanNative = registerPlugin<YadbanNativePluginInterface>('YadbanNative');
@@ -408,4 +416,69 @@ export async function dictatePersianText(): Promise<{
       }
     }
   });
+}
+
+export async function exportYadbanBackup(
+  fileName: string,
+  jsonContent: string
+): Promise<{ ok: boolean; cancelled?: boolean; method?: string; error?: string }> {
+  if (isNativeAndroidApp()) {
+    try {
+      return await YadbanNative.exportBackupFile({ fileName, jsonContent });
+    } catch {
+      return { ok: false, error: 'خطا در ذخیره‌سازی فایل پشتیبان در حافظه گوشی.' };
+    }
+  }
+
+  try {
+    const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (a.parentNode) a.parentNode.removeChild(a);
+    }, 1000);
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 15000);
+    return { ok: true, method: 'browser_download' };
+  } catch {
+    return { ok: false, error: 'مرورگر اجازه دانلود مستقیم فایل را نداد.' };
+  }
+}
+
+export async function shareYadbanBackup(
+  fileName: string,
+  jsonContent: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (isNativeAndroidApp()) {
+    try {
+      return await YadbanNative.shareBackupFile({ fileName, jsonContent });
+    } catch {
+      return { ok: false, error: 'خطا در اشتراک‌گذاری فایل پشتیبان.' };
+    }
+  }
+
+  if (typeof navigator !== 'undefined' && 'share' in navigator) {
+    try {
+      const file = new File([jsonContent], fileName, { type: 'application/json' });
+      const navWithShare = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+      };
+      if (navWithShare.canShare?.({ files: [file] })) {
+        await navigator.share({ title: 'فایل پشتیبان یادبان', files: [file] });
+        return { ok: true };
+      }
+      await navigator.share({ title: 'فایل پشتیبان یادبان', text: jsonContent });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'اشتراک‌گذاری لغو شد یا در این مرورگر پشتیبانی نمی‌شود.' };
+    }
+  }
+  return { ok: false, error: 'اشتراک‌گذاری مستقیم در این مرورگر در دسترس نیست.' };
 }

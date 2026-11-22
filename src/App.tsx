@@ -78,7 +78,7 @@ export default function App() {
   const pullFromNativeDb = useCallback(async () => {
     if (!isNativeAndroidApp()) return;
     const { items: nativeItems, settings: nativeSettings } = await loadNativeOfflineData();
-    if (nativeItems && Array.isArray(nativeItems) && nativeItems.length > 0) {
+    if (nativeItems && Array.isArray(nativeItems)) {
       setItems(nativeItems);
     }
     if (nativeSettings) {
@@ -408,6 +408,31 @@ export default function App() {
     void triggerAlert(sample, false);
   };
 
+  const handleResetTasks = (mode: 'clear_all' | 'uncheck_done') => {
+    if (mode === 'clear_all') {
+      items.forEach((item) => {
+        if (item.voiceNoteId) {
+          void deleteVoiceBlob(item.voiceNoteId);
+        }
+      });
+      setItems([]);
+      setActiveAlert(null);
+      showToast('همه کارها و یادآورها پاک‌سازی شدند');
+      return;
+    }
+
+    setItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        completed: false,
+        completedDates: [],
+        snoozedUntil: undefined,
+      }))
+    );
+    setActiveAlert(null);
+    showToast('تیک همه کارهای انجام‌شده بازنشانی شد');
+  };
+
   const dockWidgets = useMemo(
     () =>
       [...widgets]
@@ -590,10 +615,13 @@ export default function App() {
           <PersonalizationSettingsView
             settings={settings}
             items={items}
+            widgets={widgets}
             onUpdateSettings={(partial) =>
               setSettings((prev) => ({ ...prev, ...partial }))
             }
             onImportItems={(imported) => setItems(imported)}
+            onImportWidgets={(importedWidgets) => setWidgets(importedWidgets)}
+            onResetTasks={handleResetTasks}
             onResetDemo={() => {
               setItems(createSeedItems());
               setWidgets(DEFAULT_WIDGETS);

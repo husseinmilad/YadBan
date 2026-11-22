@@ -4,17 +4,26 @@ import {
   Bell,
   BellRing,
   CheckCircle2,
+  Copy,
   Download,
   Mic,
   Moon,
   Palette,
   RotateCcw,
+  Share2,
   ShieldCheck,
   Sun,
+  Trash2,
   Upload,
   Volume2,
 } from 'lucide-react';
-import { MemoryItem, NativePermissionsStatus, PaletteId, UserSettings } from '../types/memory';
+import {
+  MemoryItem,
+  NativePermissionsStatus,
+  PaletteId,
+  UserSettings,
+  WidgetConfig,
+} from '../types/memory';
 import {
   isAlertAudioUnlocked,
   playChime,
@@ -22,20 +31,25 @@ import {
 } from '../utils/audioAndVoice';
 import { toPersianDigits } from '../utils/dateFa';
 import {
+  exportYadbanBackup,
   getNativePermissionsStatus,
   requestNativeBatteryOptimizationExemption,
   requestNativeExactAlarmPermission,
   requestNativeMicrophonePermission,
   requestNativeNotificationPermission,
   scheduleNativeDelayedTestAlarm,
+  shareYadbanBackup,
   syncOfflineStateAndAlarms,
 } from '../utils/nativeBridge';
 
 interface PersonalizationSettingsViewProps {
   settings: UserSettings;
   items: MemoryItem[];
+  widgets?: WidgetConfig[];
   onUpdateSettings: (partial: Partial<UserSettings>) => void;
   onImportItems: (imported: MemoryItem[]) => void;
+  onImportWidgets?: (imported: WidgetConfig[]) => void;
+  onResetTasks: (mode: 'clear_all' | 'uncheck_done') => void;
   onResetDemo: () => void;
   onTriggerTestReminder: () => void;
 }
@@ -51,8 +65,11 @@ const PALETTES: { id: PaletteId; label: string; swatch: string }[] = [
 export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewProps> = ({
   settings,
   items,
+  widgets,
   onUpdateSettings,
   onImportItems,
+  onImportWidgets,
+  onResetTasks,
   onResetDemo,
   onTriggerTestReminder,
 }) => {
@@ -67,6 +84,10 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
     isAlertAudioUnlocked()
   );
   const [schedulingDelayedTest, setSchedulingDelayedTest] = useState(false);
+  const [exportingBackup, setExportingBackup] = useState(false);
+  const [showResetTasksConfirm, setShowResetTasksConfirm] = useState(false);
+  const [showPasteRestore, setShowPasteRestore] = useState(false);
+  const [pasteBackupText, setPasteBackupText] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -172,38 +193,153 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
     }
   };
 
-  const handleExportBackup = () => {
+  const buildBackupPayload = () => {
+    const fileName = `yadban-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const payload = JSON.stringify(
-      { settings, items, exportedAt: new Date().toISOString() },
+      {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        settings,
+        items,
+        widgets: widgets || [],
+      },
       null,
       2
     );
-    const blob = new Blob([payload], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `yadban-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    return { fileName, payload };
+  };
+
+  const applyParsedBackup = (rawJson: string): boolean => {
+    try {
+      const parsed = JSON.parse(rawJson) as {
+        items?: MemoryItem[];
+        settings?: Partial<UserSettings>;
+        widgets?: WidgetConfig[];
+      };
+      if (!Array.isArray(parsed.items)) {
+        setFeedbackMsg('ساختار فایل پشتیبان معتبر نیست (لیست کارها یافت نشد).');
+        return false;
+      }
+      onImportItems(parsed.items);
+      if (parsed.settings && typeof parsed.settings === 'object') {
+        onUpdateSettings(parsed.settings);
+      }
+      if (Array.isArray(parsed.widgets) && parsed.widgets.length > 0 && onImportWidgets) {
+        onImportWidgets(parsed.widgets);
+      }
+      setFeedbackMsg('نسخه پشتیبان با موفقیت بازیابی و در حافظه آفلاین ذخیره شد.');
+      return true;
+    } catch {
+      setFeedbackMsg('متن یا ساختار فایل پشتیبان معتبر نیست.');
+      return false;
+    }
+  };
+
+  const copyTextSafely = async (text: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // fall through to textarea copy fallback
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'true');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return copied;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleExportBackup = async () => {
+    setExportingBackup(true);
+    try {
+      const { fileName, payload } = buildBackupPayload();
+      const res = await exportYadbanBackup(fileName, payload);
+      if (res.ok) {
+        if (res.method === 'android_document') {
+          setFeedbackMsg('فایل پشتیبان با موفقیت در مسیر انتخاب‌شده حافظه گوشی ذخیره شد.');
+        } else if (res.method === 'android_share_fallback') {
+          setFeedbackMsg('پنجره ذخیره و اشتراک‌گذاری فایل پشتیبان باز شد.');
+        } else {
+          setFeedbackMsg(
+            'فایل پشتیبان برای دانلود آماده شد؛ اگر محیط مرورگر دانلود را مسدود کرد از «کپی متن پشتیبان» استفاده کنید.'
+          );
+        }
+      } else if (res.cancelled) {
+        setFeedbackMsg('ذخیره فایل پشتیبان لغو شد.');
+      } else {
+        const copied = await copyTextSafely(payload);
+        setFeedbackMsg(
+          copied
+            ? `${res.error || 'خروجی مستقیم فایل انجام نشد.'} متن پشتیبان در حافظه موقت (کلیپ‌بورد) کپی شد.`
+            : res.error || 'خروجی فایل پشتیبان با خطا مواجه شد؛ از دکمه کپی یا اشتراک‌گذاری استفاده کنید.'
+        );
+      }
+    } finally {
+      setExportingBackup(false);
+    }
+  };
+
+  const handleShareBackup = async () => {
+    const { fileName, payload } = buildBackupPayload();
+    const res = await shareYadbanBackup(fileName, payload);
+    if (res.ok) {
+      setFeedbackMsg('فایل پشتیبان برای ارسال یا ذخیره در برنامه‌های دیگر آماده شد.');
+    } else {
+      const copied = await copyTextSafely(payload);
+      setFeedbackMsg(
+        copied
+          ? 'اشتراک‌گذاری مستقیم در دسترس نبود؛ متن پشتیبان در کلیپ‌بورد کپی شد.'
+          : res.error || 'امکان اشتراک‌گذاری در این دستگاه وجود ندارد.'
+      );
+    }
+  };
+
+  const handleCopyBackupText = async () => {
+    const { payload } = buildBackupPayload();
+    const copied = await copyTextSafely(payload);
+    setFeedbackMsg(
+      copied
+        ? 'متن کامل پشتیبان در کلیپ‌بورد کپی شد؛ می‌توانید آن را در فایل یا یادداشت ذخیره کنید.'
+        : 'امکان کپی خودکار وجود نداشت؛ از خروجی یا اشتراک‌گذاری فایل استفاده کنید.'
+    );
   };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result));
-        if (Array.isArray(parsed.items)) {
-          onImportItems(parsed.items);
-          if (parsed.settings) onUpdateSettings(parsed.settings);
-          setFeedbackMsg('فایل پشتیبان با موفقیت بازیابی و در حافظه آفلاین ذخیره شد.');
-        }
-      } catch {
-        setFeedbackMsg('ساختار فایل پشتیبان معتبر نیست.');
-      }
+      applyParsedBackup(String(reader.result));
+      inputEl.value = '';
+    };
+    reader.onerror = () => {
+      setFeedbackMsg('خواندن فایل انتخاب‌شده با خطا مواجه شد.');
+      inputEl.value = '';
     };
     reader.readAsText(file);
+  };
+
+  const handleRestoreFromPastedText = () => {
+    if (!pasteBackupText.trim()) {
+      setFeedbackMsg('ابتدا متن JSON پشتیبان را در کادر وارد کنید.');
+      return;
+    }
+    if (applyParsedBackup(pasteBackupText.trim())) {
+      setPasteBackupText('');
+      setShowPasteRestore(false);
+    }
   };
 
   const alertsReady =
@@ -652,52 +788,173 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
         </section>
       </div>
 
-      {/* Offline Local Data Backup */}
-      <section className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-5">
-        <div className="space-y-1">
-          <h2 className="text-base font-bold text-[var(--text-primary)]">
-            پشتیبان‌گیری آفلاین اطلاعات روی حافظه گوشی
-          </h2>
-          <p className="text-xs text-[var(--text-muted)]">
-            تمامی برنامه‌ها و شماره‌های شما به‌صورت محلی روی گوشی نگهداری می‌شوند. می‌توانید هر زمان فایل پشتیبان بگیرید.
-          </p>
+      {/* Offline Local Data Backup & Tasks Reset */}
+      <section className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 sm:p-6 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-[var(--text-primary)]">
+              پشتیبان‌گیری آفلاین و مدیریت داده‌های کارها
+            </h2>
+            <p className="text-xs text-[var(--text-muted)]">
+              تمامی برنامه‌ها و یادآورها به‌صورت محلی روی گوشی نگهداری می‌شوند. می‌توانید فایل پشتیبان بگیرید، آن را اشتراک بگذارید یا لیست کارها را ریست کنید.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              disabled={exportingBackup}
+              onClick={handleExportBackup}
+              className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--accent)] px-4 text-xs font-bold text-[var(--accent-on)] hover:opacity-95 disabled:opacity-60 cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>{exportingBackup ? 'در حال آماده‌سازی...' : 'خروجی فایل پشتیبان'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleShareBackup}
+              className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>اشتراک‌گذاری پشتیبان</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyBackupText}
+              className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer"
+            >
+              <Copy className="w-4 h-4" />
+              <span>کپی متن پشتیبان</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer"
+            >
+              <Upload className="w-4 h-4" />
+              <span>بازیابی از فایل</span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json,text/plain"
+              onChange={handleImportFile}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={() => setShowPasteRestore((v) => !v)}
+              className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-subtle)] px-3.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-tonal)] cursor-pointer"
+            >
+              <span>بازیابی از متن</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onResetDemo}
+              className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-subtle)] px-4 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-tonal)] cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>بازگردانی داده‌های نمونه</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowResetTasksConfirm((v) => !v)}
+              className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-rose-500/35 bg-rose-500/10 px-4 text-xs font-bold text-rose-700 dark:text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>ریست شدن کارها</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={handleExportBackup}
-            className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer"
-          >
-            <Download className="w-4 h-4" />
-            <span>خروجی فایل پشتیبان</span>
-          </button>
+        {showPasteRestore && (
+          <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] p-4 space-y-3">
+            <label className="block text-xs font-bold text-[var(--text-primary)]">
+              بازیابی با جای‌گذاری متن JSON پشتیبان
+            </label>
+            <textarea
+              rows={4}
+              dir="ltr"
+              value={pasteBackupText}
+              onChange={(e) => setPasteBackupText(e.target.value)}
+              placeholder='{"version": 1, "items": [...]}'
+              className="w-full rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-3 text-xs text-[var(--text-primary)] font-mono"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRestoreFromPastedText}
+                className="min-h-[40px] px-4 rounded-xl bg-[var(--accent)] text-[var(--accent-on)] text-xs font-bold cursor-pointer"
+              >
+                اعمال و بازیابی داده‌ها
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPasteRestore(false);
+                  setPasteBackupText('');
+                }}
+                className="min-h-[40px] px-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs font-semibold text-[var(--text-secondary)] cursor-pointer"
+              >
+                بستن
+              </button>
+            </div>
+          </div>
+        )}
 
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer"
+        {showResetTasksConfirm && (
+          <div
+            role="region"
+            aria-label="تایید ریست کارها"
+            className="rounded-[var(--radius-control)] border border-rose-500/35 bg-rose-500/8 p-4 space-y-3"
           >
-            <Upload className="w-4 h-4" />
-            <span>بازیابی نسخه پشتیبان</span>
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/json"
-            onChange={handleImportFile}
-            className="hidden"
-          />
-
-          <button
-            type="button"
-            onClick={onResetDemo}
-            className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-subtle)] px-4 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-tonal)] cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>بازگردانی داده‌های نمونه</span>
-          </button>
-        </div>
+            <div className="space-y-1">
+              <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
+                نحوه ریست شدن کارها را انتخاب کنید ({toPersianDigits(items.length)} مورد ثبت‌شده):
+              </p>
+              <p className="text-xs text-[var(--text-secondary)]">
+                می‌توانید فقط تیک کارهای انجام‌شده را بردارید تا دوباره از نو انجام شوند، یا کل لیست کارها را برای شروع از صفر پاک کنید.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onResetTasks('clear_all');
+                  setShowResetTasksConfirm(false);
+                  setFeedbackMsg('تمامی کارها و یادآورهای ثبت‌شده پاک‌سازی و ریست شدند.');
+                }}
+                className="min-h-[40px] px-4 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 cursor-pointer"
+              >
+                حذف کامل همه کارها (شروع از صفر)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onResetTasks('uncheck_done');
+                  setShowResetTasksConfirm(false);
+                  setFeedbackMsg('تیک تمامی کارهای انجام‌شده بازنشانی شد.');
+                }}
+                className="min-h-[40px] px-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-surface-tonal)] cursor-pointer"
+              >
+                برداشتن تیک کارهای انجام‌شده
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowResetTasksConfirm(false)}
+                className="min-h-[40px] px-4 rounded-xl text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-tonal)] cursor-pointer"
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {feedbackMsg && (

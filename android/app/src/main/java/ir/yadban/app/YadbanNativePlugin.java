@@ -15,6 +15,7 @@ import android.speech.RecognizerIntent;
 
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -26,6 +27,12 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 
 @CapacitorPlugin(
@@ -36,6 +43,8 @@ import java.util.ArrayList;
     }
 )
 public class YadbanNativePlugin extends Plugin {
+
+    private File pendingBackupTempFile;
 
     @PluginMethod
     public void saveOfflineSnapshot(PluginCall call) {
@@ -126,6 +135,128 @@ public class YadbanNativePlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("ok", true);
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void exportBackupFile(PluginCall call) {
+        String fileName = call.getString("fileName", "yadban-backup.json");
+        String jsonContent = call.getString("jsonContent", "");
+        Context ctx = getContext();
+
+        try {
+            File outFile = new File(ctx.getCacheDir(), fileName);
+            try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                fos.write(jsonContent.getBytes(StandardCharsets.UTF_8));
+                fos.flush();
+            }
+            pendingBackupTempFile = outFile;
+
+            Intent createIntent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            createIntent.addCategory(Intent.CATEGORY_OPENABLE);
+            createIntent.setType("application/json");
+            createIntent.putExtra(Intent.EXTRA_TITLE, fileName);
+
+            try {
+                startActivityForResult(call, createIntent, "exportBackupResult");
+            } catch (ActivityNotFoundException noDocEx) {
+                launchShareChooser(ctx, outFile);
+                JSObject ret = new JSObject();
+                ret.put("ok", true);
+                ret.put("method", "share");
+                call.resolve(ret);
+            }
+        } catch (Exception ex) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("error", ex.getMessage());
+            call.resolve(ret);
+        }
+    }
+
+    @ActivityCallback
+    private void exportBackupResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        JSObject ret = new JSObject();
+        if (result == null || result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
+            ret.put("ok", false);
+            ret.put("cancelled", true);
+            call.resolve(ret);
+            return;
+        }
+
+        Uri targetUri = result.getData().getData();
+        if (targetUri == null || pendingBackupTempFile == null || !pendingBackupTempFile.exists()) {
+            ret.put("ok", false);
+            ret.put("error", "missing_target_uri");
+            call.resolve(ret);
+            return;
+        }
+
+        try (
+            InputStream in = new FileInputStream(pendingBackupTempFile);
+            OutputStream out = getContext().getContentResolver().openOutputStream(targetUri, "wt")
+        ) {
+            if (out == null) {
+                ret.put("ok", false);
+                ret.put("error", "open_output_failed");
+                call.resolve(ret);
+                return;
+            }
+            byte[] buf = new byte[8192];
+            int len;
+            while ((len = in.read(buf)) > 0) {
+                out.write(buf, 0, len);
+            }
+            out.flush();
+            ret.put("ok", true);
+            ret.put("method", "document_picker");
+            call.resolve(ret);
+        } catch (Exception ex) {
+            ret.put("ok", false);
+            ret.put("error", ex.getMessage());
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void shareBackupFile(PluginCall call) {
+        String fileName = call.getString("fileName", "yadban-backup.json");
+        String jsonContent = call.getString("jsonContent", "");
+        Context ctx = getContext();
+
+        try {
+            File outFile = new File(ctx.getCacheDir(), fileName);
+            try (FileOutputStream fos = new FileOutputStream(outFile)) {
+                fos.write(jsonContent.getBytes(StandardCharsets.UTF_8));
+                fos.flush();
+            }
+            launchShareChooser(ctx, outFile);
+            JSObject ret = new JSObject();
+            ret.put("ok", true);
+            call.resolve(ret);
+        } catch (Exception ex) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("error", ex.getMessage());
+            call.resolve(ret);
+        }
+    }
+
+    private void launchShareChooser(Context ctx, File outFile) {
+        Uri uri = FileProvider.getUriForFile(
+            ctx,
+            ctx.getPackageName() + ".fileprovider",
+            outFile
+        );
+        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+        shareIntent.setType("application/json");
+        shareIntent.putExtra(Intent.EXTRA_STREAM, uri);
+        shareIntent.putExtra(Intent.EXTRA_SUBJECT, "فایل پشتیبان یادبان");
+        shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+        Intent chooser = Intent.createChooser(shareIntent, "ذخیره یا اشتراک‌گذاری فایل پشتیبان یادبان");
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        ctx.startActivity(chooser);
     }
 
     private boolean isMicrophoneGranted(Context ctx) {
@@ -321,6 +452,166 @@ public class YadbanNativePlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("batteryIgnored", ignored);
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void exportBackupFile(PluginCall call) {
+        String rawName = call.getString("fileName", "yadban-backup.json");
+        String safeName = sanitizeBackupFileName(rawName);
+        String jsonContent = call.getString("jsonContent", "{}");
+
+        Context ctx = getContext();
+        File tempFile;
+        try {
+            tempFile = writeCacheBackupFile(ctx, safeName, jsonContent);
+        } catch (Exception ex) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("error", "خطا در آماده‌سازی فایل پشتیبان");
+            call.resolve(ret);
+            return;
+        }
+
+        pendingBackupTempFile = tempFile;
+
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, safeName);
+
+        try {
+            startActivityForResult(call, intent, "exportBackupResult");
+        } catch (ActivityNotFoundException ex) {
+            // Fallback to Android share sheet if device has no document picker
+            try {
+                launchBackupShareChooser(ctx, tempFile, safeName);
+                pendingBackupTempFile = null;
+                JSObject ret = new JSObject();
+                ret.put("ok", true);
+                ret.put("method", "android_share_fallback");
+                call.resolve(ret);
+            } catch (Exception shareEx) {
+                pendingBackupTempFile = null;
+                JSObject ret = new JSObject();
+                ret.put("ok", false);
+                ret.put("error", "امکان باز کردن مدیریت فایل یا اشتراک‌گذاری وجود ندارد");
+                call.resolve(ret);
+            }
+        }
+    }
+
+    @ActivityCallback
+    private void exportBackupResult(PluginCall call, ActivityResult result) {
+        if (call == null) {
+            pendingBackupTempFile = null;
+            return;
+        }
+        JSObject ret = new JSObject();
+        try {
+            if (result != null
+                    && result.getResultCode() == Activity.RESULT_OK
+                    && result.getData() != null
+                    && result.getData().getData() != null
+                    && pendingBackupTempFile != null
+                    && pendingBackupTempFile.exists()) {
+                Uri targetUri = result.getData().getData();
+                try (InputStream in = new FileInputStream(pendingBackupTempFile);
+                     OutputStream out = getContext().getContentResolver().openOutputStream(targetUri)) {
+                    if (out == null) {
+                        ret.put("ok", false);
+                        ret.put("error", "دسترسی نوشتن به فایل انتخاب‌شده برقرار نشد");
+                        call.resolve(ret);
+                        return;
+                    }
+                    byte[] buffer = new byte[4096];
+                    int len;
+                    while ((len = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, len);
+                    }
+                    out.flush();
+                }
+                ret.put("ok", true);
+                ret.put("method", "android_document");
+                call.resolve(ret);
+                return;
+            }
+
+            if (result != null && result.getResultCode() == Activity.RESULT_CANCELED) {
+                ret.put("ok", false);
+                ret.put("cancelled", true);
+                call.resolve(ret);
+                return;
+            }
+
+            ret.put("ok", false);
+            ret.put("error", "ذخیره فایل پشتیبان انجام نشد");
+            call.resolve(ret);
+        } catch (Exception ex) {
+            ret.put("ok", false);
+            ret.put("error", "خطا هنگام نوشتن فایل پشتیبان در حافظه");
+            call.resolve(ret);
+        } finally {
+            pendingBackupTempFile = null;
+        }
+    }
+
+    @PluginMethod
+    public void shareBackupFile(PluginCall call) {
+        String rawName = call.getString("fileName", "yadban-backup.json");
+        String safeName = sanitizeBackupFileName(rawName);
+        String jsonContent = call.getString("jsonContent", "{}");
+
+        Context ctx = getContext();
+        JSObject ret = new JSObject();
+        try {
+            File tempFile = writeCacheBackupFile(ctx, safeName, jsonContent);
+            launchBackupShareChooser(ctx, tempFile, safeName);
+            ret.put("ok", true);
+        } catch (Exception ex) {
+            ret.put("ok", false);
+            ret.put("error", "خطا در اشتراک‌گذاری فایل پشتیبان");
+        }
+        call.resolve(ret);
+    }
+
+    private String sanitizeBackupFileName(String rawName) {
+        String cleaned = (rawName == null ? "yadban-backup.json" : rawName)
+                .replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (cleaned.isEmpty()) cleaned = "yadban-backup.json";
+        if (!cleaned.endsWith(".json")) cleaned = cleaned + ".json";
+        return cleaned;
+    }
+
+    private File writeCacheBackupFile(Context ctx, String safeName, String jsonContent) throws Exception {
+        File outFile = new File(ctx.getCacheDir(), safeName);
+        try (FileOutputStream fos = new FileOutputStream(outFile, false)) {
+            byte[] bytes = (jsonContent != null ? jsonContent : "{}").getBytes(StandardCharsets.UTF_8);
+            fos.write(bytes);
+            fos.flush();
+        }
+        return outFile;
+    }
+
+    private void launchBackupShareChooser(Context ctx, File tempFile, String safeName) {
+        Uri contentUri = FileProvider.getUriForFile(
+                ctx,
+                ctx.getPackageName() + ".fileprovider",
+                tempFile
+        );
+        Intent sendIntent = new Intent(Intent.ACTION_SEND);
+        sendIntent.setType("application/json");
+        sendIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+        sendIntent.putExtra(Intent.EXTRA_SUBJECT, safeName);
+        sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+        Intent chooser = Intent.createChooser(sendIntent, "ارسال یا ذخیره فایل پشتیبان یادبان");
+        Activity activity = getActivity();
+        if (activity != null) {
+            activity.startActivity(chooser);
+        } else {
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(chooser);
+        }
     }
 
     private String mapPermissionState(PermissionState state) {
