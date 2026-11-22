@@ -28,31 +28,23 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK 36
         uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK licenses and install SDK 36
-        run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Install npm dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci --legacy-peer-deps
-          else
-            npm install --legacy-peer-deps --no-audit --no-fund
-          fi
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Type check and build offline web bundle
         run: |
-          npx tsc --noEmit
+          npm run lint
           npm run build
 
       - name: Sync Capacitor Android project
         run: |
-          npx cap telemetry off || true
-          CI=true npx cap sync android < /dev/null
+          ./node_modules/.bin/cap telemetry off < /dev/null || true
+          CI=true ./node_modules/.bin/cap sync android < /dev/null
 
       - name: Build Debug APK with Gradle
         working-directory: android
