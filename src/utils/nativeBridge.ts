@@ -39,6 +39,7 @@ interface YadbanNativePluginInterface {
   requestExactAlarmPermission(): Promise<{ status: 'granted' | 'denied' }>;
   requestMicrophonePermission(): Promise<{ status: 'granted' | 'denied' | 'prompt' }>;
   requestBatteryOptimizationExemption(): Promise<{ batteryIgnored: boolean }>;
+  startSpeechToText(): Promise<{ ok: boolean; text?: string; reason?: string }>;
 }
 
 const YadbanNative = registerPlugin<YadbanNativePluginInterface>('YadbanNative');
@@ -273,4 +274,138 @@ export async function requestNativeBatteryOptimizationExemption(): Promise<boole
     }
   }
   return true;
+}
+
+interface SpeechRecognitionAlternativeLike {
+  transcript?: string;
+}
+
+interface SpeechRecognitionResultLike {
+  0?: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike {
+  results?: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionErrorEventLike {
+  error?: string;
+}
+
+interface BrowserSpeechRecognition {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  continuous: boolean;
+  onresult: ((ev: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((ev: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+type SpeechRecognitionCtor = new () => BrowserSpeechRecognition;
+
+export async function dictatePersianText(): Promise<{
+  ok: boolean;
+  text?: string;
+  error?: string;
+}> {
+  if (isNativeAndroidApp()) {
+    try {
+      const micPerm = await requestNativeMicrophonePermission();
+      if (micPerm === 'denied') {
+        return {
+          ok: false,
+          error: 'مجوز میکروفن مسدود شده است؛ لطفاً از بخش «شخصی‌سازی ← مجوزهای برنامه» آن را تایید کنید.',
+        };
+      }
+      const res = await YadbanNative.startSpeechToText();
+      if (res.ok && res.text) {
+        return { ok: true, text: res.text };
+      }
+      if (res.reason === 'permission_denied') {
+        return {
+          ok: false,
+          error: 'مجوز میکروفن داده نشد؛ لطفاً دسترسی میکروفن را تایید کنید.',
+        };
+      }
+      if (res.reason === 'no_speech_service') {
+        return {
+          ok: false,
+          error: 'سرویس تبدیل گفتار به متن روی این گوشی نصب یا فعال نیست.',
+        };
+      }
+      return { ok: false, error: 'صدایی دریافت نشد یا تبدیل گفتار لغو شد.' };
+    } catch {
+      return { ok: false, error: 'خطا در اجرای تبدیل گفتار به متن بومی اندروید.' };
+    }
+  }
+
+  if (typeof window === 'undefined') {
+    return { ok: false, error: 'امکان تبدیل گفتار در این محیط وجود ندارد.' };
+  }
+
+  const win = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  };
+  const SpeechCtor = win.SpeechRecognition || win.webkitSpeechRecognition;
+  if (!SpeechCtor) {
+    return {
+      ok: false,
+      error: 'تایپ صوتی در این مرورگر پشتیبانی نمی‌شود (از ضبط یادداشت صوتی پایین استفاده کنید یا نسخه APK را نصب کنید).',
+    };
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    try {
+      const recognition = new SpeechCtor();
+      recognition.lang = 'fa-IR';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.continuous = false;
+
+      recognition.onresult = (event) => {
+        if (settled) return;
+        settled = true;
+        const transcript = event.results?.[0]?.[0]?.transcript?.trim() || '';
+        if (transcript) {
+          resolve({ ok: true, text: transcript });
+        } else {
+          resolve({ ok: false, error: 'صدایی تشخیص داده نشد.' });
+        }
+      };
+
+      recognition.onerror = (ev) => {
+        if (settled) return;
+        settled = true;
+        if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+          resolve({
+            ok: false,
+            error: 'دسترسی میکروفن مسدود است؛ لطفاً مجوز میکروفن مرورگر را تایید کنید.',
+          });
+        } else if (ev.error === 'no-speech') {
+          resolve({ ok: false, error: 'صدایی شنیده نشد؛ لطفاً واضح‌تر صحبت کنید.' });
+        } else {
+          resolve({ ok: false, error: 'تبدیل گفتار به متن در مرورگر با خطا مواجه شد.' });
+        }
+      };
+
+      recognition.onend = () => {
+        if (!settled) {
+          settled = true;
+          resolve({ ok: false, error: 'تایپ صوتی پایان یافت.' });
+        }
+      };
+
+      recognition.start();
+    } catch {
+      if (!settled) {
+        settled = true;
+        resolve({ ok: false, error: 'راه‌اندازی تایپ صوتی با خطا مواجه شد.' });
+      }
+    }
+  });
 }

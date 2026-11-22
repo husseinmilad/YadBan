@@ -52,7 +52,10 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
           (item.notes || '').toLowerCase().includes(q) ||
           (item.phoneNumber || '').includes(q) ||
           (item.contactName || '').toLowerCase().includes(q) ||
-          (item.locationHint || '').toLowerCase().includes(q)
+          (item.locationHint || '').toLowerCase().includes(q) ||
+          (item.subType || '').toLowerCase().includes(q) ||
+          (item.dosage || '').toLowerCase().includes(q) ||
+          (item.personOrPlace || '').toLowerCase().includes(q)
         );
       })
       .sort((a, b) => Number(b.pinnedToWidget) - Number(a.pinnedToWidget) || b.createdAt - a.createdAt);
@@ -210,6 +213,31 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
                           <Phone className="w-4 h-4" />
                         </a>
                       </div>
+                    </div>
+                  )}
+
+                  {(item.subType ||
+                    item.dosage ||
+                    item.mealTiming ||
+                    item.durationOrQty ||
+                    item.personOrPlace) && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {[
+                        item.subType,
+                        item.dosage ? `مقدار: ${item.dosage}` : undefined,
+                        item.mealTiming,
+                        item.durationOrQty,
+                        item.personOrPlace,
+                      ]
+                        .filter(Boolean)
+                        .map((metaText) => (
+                          <span
+                            key={metaText}
+                            className="inline-flex items-center rounded-lg bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]"
+                          >
+                            {metaText}
+                          </span>
+                        ))}
                     </div>
                   )}
 

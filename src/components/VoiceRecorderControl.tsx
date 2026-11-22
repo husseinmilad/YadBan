@@ -128,8 +128,19 @@ export const VoiceRecorderControl: React.FC<VoiceRecorderControlProps> = ({
         elapsedRef.current += 1;
         setElapsedSec(elapsedRef.current);
       }, 1000);
-    } catch {
-      setErrorMsg('دسترسی به میکروفن امکان‌پذیر نبود. لطفاً مجوز میکروفن را بررسی کنید.');
+    } catch (err: unknown) {
+      const errName = (err as { name?: string })?.name;
+      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        setErrorMsg(
+          'دسترسی میکروفن در مرورگر/وب‌ویو بسته است. لطفاً یک‌بار از بخش «شخصی‌سازی ← مجوز میکروفن» تایید کنید.'
+        );
+      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        setErrorMsg('میکروفن فعالی روی دستگاه شناسایی نشد.');
+      } else if (errName === 'NotReadableError') {
+        setErrorMsg('میکروفن هم‌اکنون در برنامه دیگری در حال استفاده است.');
+      } else {
+        setErrorMsg('امکان شروع ضبط صدا وجود نداشت؛ لطفاً دوباره تلاش کنید.');
+      }
     }
   };
 

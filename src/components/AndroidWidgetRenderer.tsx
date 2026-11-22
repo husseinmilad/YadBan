@@ -78,7 +78,12 @@ export const AndroidWidgetRenderer: React.FC<AndroidWidgetRendererProps> = ({
     setTimeout(() => setCopiedId(null), 1600);
   };
 
-  const spanClass = widget.size === '4x2' ? 'col-span-1 sm:col-span-2' : 'col-span-1';
+  const spanClass =
+    widget.size === '4x2'
+      ? 'col-span-1 sm:col-span-4'
+      : widget.size === '3x2'
+        ? 'col-span-1 sm:col-span-3'
+        : 'col-span-1 sm:col-span-2';
 
   if (widget.type === 'clock_next') {
     const { hm, sec } = formatSecondsClockFa(now);

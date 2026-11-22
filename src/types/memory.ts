@@ -17,7 +17,7 @@ export type WidgetType =
   | 'progress_routine'
   | 'pinned_phones';
 
-export type WidgetSize = '2x2' | '4x2';
+export type WidgetSize = '2x2' | '3x2' | '4x2';
 export type WidgetStyle = 'tonal' | 'glass' | 'contrast';
 
 export interface MemoryItem {
@@ -35,6 +35,11 @@ export interface MemoryItem {
   phoneNumber?: string;
   contactName?: string;
   locationHint?: string;
+  subType?: string;
+  dosage?: string;
+  mealTiming?: string;
+  durationOrQty?: string;
+  personOrPlace?: string;
   pinnedToWidget: boolean;
   createdAt: number;
   snoozedUntil?: number;

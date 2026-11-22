@@ -43,8 +43,9 @@ jobs:
 
       - name: Sync Capacitor Android project
         run: |
-          ./node_modules/.bin/cap telemetry off < /dev/null || true
-          CI=true ./node_modules/.bin/cap sync android < /dev/null
+          ./node_modules/.bin/cap telemetry off > /dev/null 2>&1 < /dev/null || true
+          CI=true ./node_modules/.bin/cap sync android > /tmp/cap-sync.log 2>&1 < /dev/null
+          cat /tmp/cap-sync.log
 
       - name: Build Debug APK with Gradle
         working-directory: android

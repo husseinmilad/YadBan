@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Bundle;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -12,6 +13,16 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class YadbanWidgetUpdater {
+
+    private static boolean isCompactWidth(AppWidgetManager mgr, int appWidgetId) {
+        try {
+            Bundle opts = mgr.getAppWidgetOptions(appWidgetId);
+            int minW = opts != null ? opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 250) : 250;
+            return minW > 0 && minW < 205;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
 
     public static void updateAllWidgets(Context context) {
         AppWidgetManager mgr = AppWidgetManager.getInstance(context);
@@ -38,6 +49,9 @@ public class YadbanWidgetUpdater {
         int appWidgetId
     ) {
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_today);
+        boolean compact = isCompactWidth(mgr, appWidgetId);
+        views.setTextViewText(R.id.widget_today_title, compact ? "برنامه امروز" : "یادبان · برنامه امروز");
+        views.setTextViewText(R.id.widget_today_add_btn, compact ? "+" : "+ ثبت فوری");
 
         // Tap header or add button -> launch app (or Quick Capture modal)
         Intent openIntent = new Intent(context, MainActivity.class);
@@ -90,7 +104,9 @@ public class YadbanWidgetUpdater {
             int done = payload.optInt("doneCount", 0);
             int total = payload.optInt("totalCount", 0);
             String jalali = payload.optString("jalaliLabel", "");
-            String subtitle = (jalali.isEmpty() ? "" : jalali + " · ") + done + " از " + total + " انجام شد";
+            String subtitle = compact
+                ? done + " از " + total + " انجام شد"
+                : (jalali.isEmpty() ? "" : jalali + " · ") + done + " از " + total + " انجام شد";
             views.setTextViewText(R.id.widget_today_subtitle, subtitle);
 
             JSONArray tasks = payload.optJSONArray("tasks");
@@ -135,6 +151,9 @@ public class YadbanWidgetUpdater {
         int appWidgetId
     ) {
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_quick);
+        boolean compact = isCompactWidth(mgr, appWidgetId);
+        views.setTextViewText(R.id.widget_quick_text_btn, compact ? "متن" : "ثبت فوری متنی");
+        views.setTextViewText(R.id.widget_quick_voice_btn, compact ? "صوت" : "ضبط صوتی آفلاین");
 
         String rawPayload = YadbanOfflineDb.getWidgetPayloadJson(context);
         if (rawPayload != null) {

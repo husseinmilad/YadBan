@@ -7,8 +7,6 @@ import {
   CalendarCheck,
   Eye,
   EyeOff,
-  Maximize2,
-  Minimize2,
   Pin,
   Plus,
   RefreshCw,
@@ -71,12 +69,8 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
     );
   };
 
-  const toggleSize = (id: string) => {
-    onUpdateWidgets(
-      widgets.map((w) =>
-        w.id === id ? { ...w, size: w.size === '4x2' ? '2x2' : '4x2' } : w
-      )
-    );
+  const setWidgetSize = (id: string, size: '2x2' | '3x2' | '4x2') => {
+    onUpdateWidgets(widgets.map((w) => (w.id === id ? { ...w, size } : w)));
   };
 
   const setStyle = (id: string, style: WidgetStyle) => {
@@ -107,7 +101,7 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
             ویجت‌های صفحه اول گوشی اندروید
           </h1>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            چیدمان ویجت‌های صفحه اصلی گوشی خود را شخصی‌سازی و با لانچر بومی اندروید همگام کنید.
+            چیدمان و عرض افقی ویجت‌های صفحه اصلی گوشی خود را شخصی‌سازی و با لانچر بومی اندروید همگام کنید.
           </p>
         </div>
 
@@ -165,7 +159,7 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
               </div>
             </div>
 
-            {/* Widgets Grid */}
+            {/* Widgets Grid (4-column horizontal grid) */}
             <div className="relative z-10 px-5 sm:px-7 py-3 flex-1">
               {enabledWidgets.length === 0 ? (
                 <div className="rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-8 text-center">
@@ -177,7 +171,7 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                   {enabledWidgets.map((widget) => (
                     <AndroidWidgetRenderer
                       key={widget.id}
@@ -238,10 +232,10 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
             </span>
             <div>
               <p className="text-sm font-bold text-[var(--text-primary)]">
-                افزودن ویجت واقعی روی صفحه اول گوشی (پس از نصب APK)
+                افزودن و تغییر عرض ویجت واقعی روی صفحه اول گوشی (APK اندروید)
               </p>
               <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
-                روی فضای خالی صفحه اصلی گوشی اندروید لمس طولانی کنید ← گزینه Widgets را بزنید ← یکی از دو ویجت بومی «برنامه امروز یادبان» یا «ثبت فوری یادبان» را روی صفحه بکشید.
+                روی فضای خالی صفحه اصلی گوشی لمس طولانی کنید ← Widgets ← یکی از ویجت‌های «برنامه امروز یادبان» یا «ثبت فوری یادبان» را قرار دهید. با نگه داشتن انگشت روی ویجت می‌توانید عرض آن را از ۲ ستون تا تمام عرض صفحه تغییر دهید.
                 {isNativeAndroidApp() ? ' همگام‌سازی بومی هم‌اکنون فعال است.' : ''}
               </p>
             </div>
@@ -251,7 +245,7 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
         {/* Widget Customizer Panel */}
         <aside className="lg:col-span-4 rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 space-y-4">
           <h2 className="text-base font-bold text-[var(--text-primary)]">
-            شخصی‌سازی چیدمان ویجت‌ها
+            شخصی‌سازی چیدمان و عرض ویجت‌ها
           </h2>
 
           <div className="divide-y divide-[var(--border-subtle)]">
@@ -280,19 +274,6 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => toggleSize(w.id)}
-                      className="min-w-[36px] min-h-[36px] rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-surface-tonal)] cursor-pointer"
-                      title={w.size === '4x2' ? 'تغییر به سایز ۲×۲' : 'تغییر به سایز عریض ۴×۲'}
-                      aria-label="تغییر اندازه ویجت"
-                    >
-                      {w.size === '4x2' ? (
-                        <Minimize2 className="w-4 h-4" />
-                      ) : (
-                        <Maximize2 className="w-4 h-4" />
-                      )}
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => toggleEnabled(w.id)}
                       className={`min-w-[36px] min-h-[36px] rounded-xl flex items-center justify-center cursor-pointer ${
                         w.enabled
@@ -307,27 +288,52 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
                 </div>
 
                 {w.enabled && (
-                  <div className="flex items-center gap-1.5">
-                    {(
-                      [
-                        { id: 'tonal', label: 'متریال رنگی' },
-                        { id: 'glass', label: 'شیشه‌ای' },
-                        { id: 'contrast', label: 'تیره کنتراست' },
-                      ] as const
-                    ).map((st) => (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => setStyle(w.id, st.id)}
-                        className={`flex-1 min-h-[34px] rounded-xl text-xs font-medium border cursor-pointer ${
-                          w.style === st.id
-                            ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
-                            : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)] border-transparent'
-                        }`}
-                      >
-                        {st.label}
-                      </button>
-                    ))}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      {(
+                        [
+                          { id: '2x2', label: 'نصف عرض (۲×۲)' },
+                          { id: '3x2', label: 'متوسط (۳×۲)' },
+                          { id: '4x2', label: 'تمام عرض (۴×۲)' },
+                        ] as const
+                      ).map((sz) => (
+                        <button
+                          key={sz.id}
+                          type="button"
+                          onClick={() => setWidgetSize(w.id, sz.id)}
+                          className={`flex-1 min-h-[34px] rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
+                            w.size === sz.id
+                              ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
+                              : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
+                          }`}
+                        >
+                          {sz.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {(
+                        [
+                          { id: 'tonal', label: 'متریال رنگی' },
+                          { id: 'glass', label: 'شیشه‌ای' },
+                          { id: 'contrast', label: 'تیره کنتراست' },
+                        ] as const
+                      ).map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setStyle(w.id, st.id)}
+                          className={`flex-1 min-h-[34px] rounded-xl text-xs font-medium border cursor-pointer ${
+                            w.style === st.id
+                              ? 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)] border-[var(--accent)]'
+                              : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)] border-transparent'
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Plus, Send, X } from 'lucide-react';
+import { Check, Maximize2, Minimize2, Plus, Send, X } from 'lucide-react';
 import { MemoryItem } from '../types/memory';
 import { formatClockFa, getLocalDateKey, toPersianDigits } from '../utils/dateFa';
 
@@ -20,6 +20,7 @@ export const FloatingMiniWidget: React.FC<FloatingMiniWidgetProps> = ({
 }) => {
   const [text, setText] = useState('');
   const [clock, setClock] = useState(() => formatClockFa(new Date()));
+  const [wideMode, setWideMode] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setClock(formatClockFa(new Date())), 15000);
@@ -45,7 +46,9 @@ export const FloatingMiniWidget: React.FC<FloatingMiniWidgetProps> = ({
   return (
     <aside
       aria-label="ویجت شناور یادبان"
-      className="fixed bottom-20 md:bottom-6 left-4 z-40 w-[300px] sm:w-[330px] rounded-[26px] bg-[var(--bg-surface)]/95 backdrop-blur-xl border border-[var(--border-subtle)] shadow-2xl p-4 space-y-3"
+      className={`fixed bottom-20 md:bottom-6 left-4 z-40 transition-all rounded-[26px] bg-[var(--bg-surface)]/95 backdrop-blur-xl border border-[var(--border-subtle)] shadow-2xl p-4 space-y-3 ${
+        wideMode ? 'w-[min(92vw,440px)]' : 'w-[280px] sm:w-[320px]'
+      }`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -56,6 +59,15 @@ export const FloatingMiniWidget: React.FC<FloatingMiniWidgetProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setWideMode((v) => !v)}
+            className="min-w-[34px] min-h-[34px] rounded-xl text-[var(--text-secondary)] hover:bg-[var(--bg-surface-tonal)] flex items-center justify-center cursor-pointer"
+            title={wideMode ? 'عرض معمولی' : 'افزایش عرض ویجت'}
+            aria-label="تغییر عرض ویجت شناور"
+          >
+            {wideMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
           <button
             type="button"
             onClick={onOpenModal}

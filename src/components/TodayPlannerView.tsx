@@ -4,6 +4,7 @@ import {
   Check,
   Clock,
   Edit3,
+  Mic,
   Phone,
   Pin,
   Plus,
@@ -23,6 +24,7 @@ import {
   TIME_BLOCK_LABELS,
   toPersianDigits,
 } from '../utils/dateFa';
+import { dictatePersianText } from '../utils/nativeBridge';
 import { CategoryIcon } from './CategoryIcon';
 import { MonthlyCalendarWidget } from './MonthlyCalendarWidget';
 import { VoiceNotePlayer } from './VoiceNotePlayer';
@@ -53,6 +55,8 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
   onSnoozeItem,
 }) => {
   const [quickText, setQuickText] = useState('');
+  const [isDictating, setIsDictating] = useState(false);
+  const [dictateErr, setDictateErr] = useState('');
   const [timeFilter, setTimeFilter] = useState<TimeBlock | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<MemoryCategory | 'all'>('all');
   const [emblemError, setEmblemError] = useState(false);
@@ -99,6 +103,22 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
     setQuickText('');
   };
 
+  const handleQuickDictate = async () => {
+    if (isDictating) return;
+    setDictateErr('');
+    setIsDictating(true);
+    try {
+      const res = await dictatePersianText();
+      if (res.ok && res.text) {
+        setQuickText((prev) => (prev.trim() ? `${prev.trim()} ${res.text}` : res.text || ''));
+      } else if (res.error) {
+        setDictateErr(res.error);
+      }
+    } finally {
+      setIsDictating(false);
+    }
+  };
+
   const radius = 30;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (pct / 100) * circumference;
@@ -112,9 +132,8 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
             <div className="w-16 h-16 rounded-2xl overflow-hidden bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] shrink-0 flex items-center justify-center">
               {!emblemError ? (
                 <img
-                  src="/src/assets/images/memory_companion_emblem_1795292130281.jpg"
-                  alt="نشان دستیار حافظه یادبان"
-                  referrerPolicy="no-referrer"
+                  src="/pwa-192x192.png"
+                  alt="لوگوی دستیار حافظه یادبان"
                   onError={() => setEmblemError(true)}
                   className="w-full h-full object-cover"
                 />
@@ -214,6 +233,21 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
 
             <div className="flex items-center gap-2 shrink-0">
               <button
+                type="button"
+                onClick={handleQuickDictate}
+                disabled={isDictating}
+                className={`min-h-[48px] min-w-[48px] inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                  isDictating
+                    ? 'bg-rose-600 text-white border-rose-600 animate-pulse'
+                    : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--accent)] hover:bg-[var(--bg-surface-tonal)]'
+                }`}
+                title="تایپ سریع با ضبط صدا"
+                aria-label="تایپ سریع با ضبط صدا"
+              >
+                <Mic className="w-4 h-4" />
+                <span className="hidden sm:inline">{isDictating ? 'گوش می‌دهم...' : 'تایپ صوتی'}</span>
+              </button>
+              <button
                 type="submit"
                 disabled={!quickText.trim()}
                 className="min-h-[48px] flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--accent-soft)] text-[var(--accent-soft-text)] px-4 text-sm font-bold hover:opacity-90 disabled:opacity-45 cursor-pointer whitespace-nowrap"
@@ -232,6 +266,10 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
               </button>
             </div>
           </div>
+
+          {dictateErr && (
+            <p className="mt-2 text-xs text-rose-600 dark:text-rose-400 font-medium">{dictateErr}</p>
+          )}
 
           {parsedHint && parsedHint.detectedHints.length > 0 && (
             <p className="mt-2 text-xs text-[var(--accent)] font-medium">
@@ -467,6 +505,31 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
                       >
                         {item.title}
                       </h3>
+
+                      {(item.subType ||
+                        item.dosage ||
+                        item.mealTiming ||
+                        item.durationOrQty ||
+                        item.personOrPlace) && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          {[
+                            item.subType,
+                            item.dosage ? `مقدار: ${item.dosage}` : undefined,
+                            item.mealTiming,
+                            item.durationOrQty,
+                            item.personOrPlace,
+                          ]
+                            .filter(Boolean)
+                            .map((metaText) => (
+                              <span
+                                key={metaText}
+                                className="inline-flex items-center rounded-lg bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]"
+                              >
+                                {metaText}
+                              </span>
+                            ))}
+                        </div>
+                      )}
 
                       {(item.notes || item.phoneNumber || item.locationHint) && (
                         <p className="mt-1 text-sm text-[var(--text-secondary)] leading-relaxed">

@@ -332,7 +332,7 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
                 )}
               </div>
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                ضبط یادداشت‌های صوتی کاملاً آفلاین و ذخیره در حافظه گوشی برای هر یادآور.
+                ضبط یادداشت صوتی آفلاین و تایپ با صدا (تبدیل گفتار به متن فارسی) در ثبت سریع.
               </p>
               <p className="text-xs font-medium text-[var(--text-muted)]">
                 وضعیت:{' '}
@@ -628,7 +628,7 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
             </div>
 
             {settings.autoRepeatNudge && (
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-[var(--border-subtle)]">
                 <span className="text-xs text-[var(--text-secondary)]">فاصله تکرار هوشمند:</span>
                 <div className="flex items-center gap-1.5">
                   {([5, 10, 15] as const).map((m) => (
@@ -636,10 +636,10 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
                       key={m}
                       type="button"
                       onClick={() => onUpdateSettings({ nudgeIntervalMin: m })}
-                      className={`min-h-[36px] px-3 rounded-xl text-xs font-semibold cursor-pointer ${
+                      className={`min-h-[36px] px-3 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
                         settings.nudgeIntervalMin === m
-                          ? 'bg-[var(--accent)] text-[var(--accent-on)]'
-                          : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)]'
+                          ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
+                          : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
                       }`}
                     >
                       هر {toPersianDigits(m)} دقیقه

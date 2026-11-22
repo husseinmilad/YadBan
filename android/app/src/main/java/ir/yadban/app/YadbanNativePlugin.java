@@ -1,22 +1,32 @@
 package ir.yadban.app;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.AlarmManager;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.speech.RecognizerIntent;
+
+import androidx.activity.result.ActivityResult;
+import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+
+import java.util.ArrayList;
 
 @CapacitorPlugin(
     name = "YadbanNative",
@@ -118,6 +128,12 @@ public class YadbanNativePlugin extends Plugin {
         call.resolve(ret);
     }
 
+    private boolean isMicrophoneGranted(Context ctx) {
+        return ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO)
+            == PackageManager.PERMISSION_GRANTED
+            || getPermissionState("microphone") == PermissionState.GRANTED;
+    }
+
     @Override
     @PluginMethod
     @PermissionCallback
@@ -125,7 +141,9 @@ public class YadbanNativePlugin extends Plugin {
         Context ctx = getContext();
         String notifStatus = "granted";
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notifStatus = mapPermissionState(getPermissionState("notifications"));
+            boolean granted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED;
+            notifStatus = granted ? "granted" : mapPermissionState(getPermissionState("notifications"));
         }
 
         String exactAlarmStatus = "granted";
@@ -134,7 +152,9 @@ public class YadbanNativePlugin extends Plugin {
             exactAlarmStatus = (am != null && am.canScheduleExactAlarms()) ? "granted" : "denied";
         }
 
-        String micStatus = mapPermissionState(getPermissionState("microphone"));
+        String micStatus = isMicrophoneGranted(ctx)
+            ? "granted"
+            : mapPermissionState(getPermissionState("microphone"));
 
         boolean batteryIgnored = true;
         PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
@@ -158,7 +178,9 @@ public class YadbanNativePlugin extends Plugin {
             call.resolve(ret);
             return;
         }
-        if (getPermissionState("notifications") == PermissionState.GRANTED) {
+        if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED
+            || getPermissionState("notifications") == PermissionState.GRANTED) {
             JSObject ret = new JSObject();
             ret.put("status", "granted");
             call.resolve(ret);
@@ -170,7 +192,10 @@ public class YadbanNativePlugin extends Plugin {
     @PermissionCallback
     private void notificationPermCallback(PluginCall call) {
         JSObject ret = new JSObject();
-        ret.put("status", mapPermissionState(getPermissionState("notifications")));
+        boolean granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+            || ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED;
+        ret.put("status", granted ? "granted" : mapPermissionState(getPermissionState("notifications")));
         call.resolve(ret);
     }
 
@@ -200,7 +225,7 @@ public class YadbanNativePlugin extends Plugin {
 
     @PluginMethod
     public void requestMicrophonePermission(PluginCall call) {
-        if (getPermissionState("microphone") == PermissionState.GRANTED) {
+        if (isMicrophoneGranted(getContext())) {
             JSObject ret = new JSObject();
             ret.put("status", "granted");
             call.resolve(ret);
@@ -212,7 +237,67 @@ public class YadbanNativePlugin extends Plugin {
     @PermissionCallback
     private void microphonePermCallback(PluginCall call) {
         JSObject ret = new JSObject();
-        ret.put("status", mapPermissionState(getPermissionState("microphone")));
+        ret.put(
+            "status",
+            isMicrophoneGranted(getContext()) ? "granted" : mapPermissionState(getPermissionState("microphone"))
+        );
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void startSpeechToText(PluginCall call) {
+        if (!isMicrophoneGranted(getContext())) {
+            requestPermissionForAlias("microphone", call, "speechMicPermCallback");
+            return;
+        }
+        launchSpeechRecognizer(call);
+    }
+
+    @PermissionCallback
+    private void speechMicPermCallback(PluginCall call) {
+        if (!isMicrophoneGranted(getContext())) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("reason", "permission_denied");
+            call.resolve(ret);
+            return;
+        }
+        launchSpeechRecognizer(call);
+    }
+
+    private void launchSpeechRecognizer(PluginCall call) {
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fa-IR");
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "fa-IR");
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "صحبت کنید تا به متن تبدیل شود...");
+        intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
+        try {
+            startActivityForResult(call, intent, "speechToTextResult");
+        } catch (ActivityNotFoundException ex) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("reason", "no_speech_service");
+            call.resolve(ret);
+        }
+    }
+
+    @ActivityCallback
+    private void speechToTextResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        JSObject ret = new JSObject();
+        if (result != null && result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
+            ArrayList<String> matches = result.getData().getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+            String text = (matches != null && !matches.isEmpty()) ? matches.get(0) : "";
+            if (!text.trim().isEmpty()) {
+                ret.put("ok", true);
+                ret.put("text", text.trim());
+                call.resolve(ret);
+                return;
+            }
+        }
+        ret.put("ok", false);
+        ret.put("reason", "cancelled");
         call.resolve(ret);
     }
 
