@@ -1,9 +1,0 @@
-{
-  "appId": "com.yadban.app",
-  "appName": "YadBan",
-  "webDir": "dist",
-  "bundledWebRuntime": false,
-  "server": {
-    "androidScheme": "https"
-  }
-}

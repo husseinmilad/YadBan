@@ -118,7 +118,9 @@ public class YadbanNativePlugin extends Plugin {
         call.resolve(ret);
     }
 
+    @Override
     @PluginMethod
+    @PermissionCallback
     public void checkPermissions(PluginCall call) {
         Context ctx = getContext();
         String notifStatus = "granted";

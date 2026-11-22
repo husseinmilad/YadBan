@@ -1,15 +1,15 @@
 # راهنمای ساخت فایل نصبی APK یادبان
 
-این پروژه بر پایه **Capacitor + ماژول‌های بومی اندروید (Kotlin)** طراحی شده است و تمام داده‌ها، فونت‌ها، ضبط یادداشت صوتی، دیتابیس آفلاین SQLite، آلارم بومی `AlarmManager` و ویجت‌های صفحه اول گوشی (`AppWidgetProvider`) به‌صورت کاملاً آفلاین درون آن پیاده‌سازی شده‌اند.
+این پروژه بر پایه **Capacitor 8 + ماژول‌های بومی اندروید (Java)** طراحی شده است و تمام داده‌ها، فونت‌ها، ضبط یادداشت صوتی، دیتابیس آفلاین SQLite، آلارم بومی `AlarmManager` و ویجت‌های صفحه اول گوشی (`AppWidgetProvider`) به‌صورت کاملاً آفلاین درون آن پیاده‌سازی شده‌اند.
 
 ## پیش‌نیازها برای ساخت APK
-- **Node.js 20+**
+- **Node.js 22+**
 - **JDK 21** (همراه Android Studio Ladybug یا جدیدتر نصب می‌شود)
-- **Android SDK Platform 35**
+- **Android SDK Platform 36** و **Build-Tools 36.0.0**
 
 ## روش اول: ساخت با یک دستور در ترمینال
 ```bash
-npm install
+npm install --legacy-peer-deps
 npm run cap:sync
 cd android
 ./gradlew assembleDebug
@@ -33,4 +33,4 @@ cd android
 3. از منوی بالا گزینه **Build > Build Bundle(s) / APK(s) > Build APK(s)** را انتخاب کنید.
 
 ## روش سوم: ساخت خودکار ابری با GitHub Actions
-فایل گردش‌کار در `.github/workflows/build-apk.yml` آماده است. با ارسال کدها به GitHub یا اجرای دستی Workflow، فایل `yadban-android-apk` به‌صورت خودکار کامپایل و آماده دانلود می‌شود.
+فایل گردش‌کار یکپارچه در `.github/workflows/android-apk.yml` آماده است. با ارسال کدها به شاخه `main`/`master` یا اجرای دستی Workflow، فایل `YadBan-Android-APK` به‌صورت خودکار کامپایل و آماده دانلود می‌شود.
