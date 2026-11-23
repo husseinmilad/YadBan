@@ -1,5 +1,68 @@
-import { MemoryItem, UserSettings, WidgetConfig } from '../types/memory';
+import {
+  CustomCategory,
+  MemoryItem,
+  TaskTemplate,
+  UserSettings,
+  WidgetConfig,
+} from '../types/memory';
 import { addDaysToDateKey, getLocalDateKey } from '../utils/dateFa';
+
+export const DEFAULT_CUSTOM_CATEGORIES: CustomCategory[] = [
+  { id: 'cc-finance', label: 'مالی و قبض', baseCategory: 'errand', tone: 'important' },
+  { id: 'cc-family', label: 'خانواده و خانه', baseCategory: 'anchor', tone: 'neutral' },
+];
+
+export const DEFAULT_TEMPLATES: TaskTemplate[] = [
+  {
+    id: 'tpl-shop',
+    name: 'فهرست خرید',
+    category: 'errand',
+    defaultTitle: 'خرید اقلام روزانه',
+    defaultNotes: 'نان، شیر، میوه، سبزیجات',
+    subType: 'خرید روزانه',
+    preReminderMinutes: 10,
+  },
+  {
+    id: 'tpl-call',
+    name: 'تماس و پیگیری',
+    category: 'phone',
+    defaultTitle: 'تماس تلفنی با ',
+    defaultNotes: 'یادداشت نتیجه تماس پس از گفتگو',
+    subType: 'پیگیری اداری',
+    preReminderMinutes: 5,
+    isImportant: true,
+  },
+  {
+    id: 'tpl-office',
+    name: 'کار اداری و بانکی',
+    category: 'work',
+    defaultTitle: 'پیگیری کار اداری',
+    defaultNotes: 'مدارک مورد نیاز: کارت ملی و پوشه مدارک',
+    subType: 'کار اداری و بانکی',
+    preReminderMinutes: 15,
+    isImportant: true,
+  },
+  {
+    id: 'tpl-med',
+    name: 'مصرف دارو',
+    category: 'health',
+    defaultTitle: 'مصرف داروی روزانه',
+    defaultTimeStr: '09:00',
+    subType: 'مصرف دارو',
+    preReminderMinutes: 5,
+    repeatDaily: true,
+    isImportant: true,
+  },
+  {
+    id: 'tpl-travel',
+    name: 'وسایل سفر',
+    category: 'errand',
+    defaultTitle: 'چک‌لیست وسایل سفر',
+    defaultNotes: 'کارت شناسایی، شارژر، داروهای ضروری، کلید منزل، عینک',
+    subType: 'آماده‌سازی سفر',
+    preReminderMinutes: 15,
+  },
+];
 
 export const DEFAULT_SETTINGS: UserSettings = {
   userName: 'سارا',
@@ -12,6 +75,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   nudgeIntervalMin: 10,
   notificationsEnabled: false,
   showFloatingWidget: false,
+  enablePhotoOcr: true,
+  customCategories: DEFAULT_CUSTOM_CATEGORIES,
+  templates: DEFAULT_TEMPLATES,
 };
 
 export const DEFAULT_WIDGETS: WidgetConfig[] = [

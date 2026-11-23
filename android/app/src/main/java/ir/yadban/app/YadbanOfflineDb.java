@@ -129,6 +129,8 @@ public class YadbanOfflineDb extends SQLiteOpenHelper {
         if (itemsJson == null) return false;
         String todayKey = getTodayDateKey();
         boolean changed = false;
+        boolean becameDone = false;
+        JSONObject completedSource = null;
 
         try {
             JSONArray arr = new JSONArray(itemsJson);
@@ -156,14 +158,48 @@ public class YadbanOfflineDb extends SQLiteOpenHelper {
                     } else if (foundIndex < 0) {
                         dates.put(todayKey);
                         obj.put("completedDates", dates);
+                        becameDone = true;
+                        completedSource = obj;
                     }
                 } else {
                     boolean currentDone = obj.optBoolean("completed", false);
-                    obj.put("completed", toggleMode ? !currentDone : true);
+                    boolean nextDone = toggleMode ? !currentDone : true;
+                    obj.put("completed", nextDone);
                     obj.remove("snoozedUntil");
+                    if (!currentDone && nextDone) {
+                        becameDone = true;
+                        completedSource = obj;
+                    }
                 }
                 changed = true;
                 break;
+            }
+
+            if (becameDone && completedSource != null) {
+                String nextStepTitle = completedSource.optString("nextStepTitle", "").trim();
+                if (!nextStepTitle.isEmpty()) {
+                    JSONObject nextItem = new JSONObject();
+                    nextItem.put("id", "mem-" + System.currentTimeMillis() + "-next");
+                    nextItem.put("title", nextStepTitle);
+                    nextItem.put("category", completedSource.optString("category", "work"));
+                    nextItem.put("dateStr", todayKey);
+                    nextItem.put("timeStr", "");
+                    nextItem.put("timeBlock", completedSource.optString("timeBlock", "morning"));
+                    nextItem.put("repeatDaily", false);
+                    nextItem.put("completed", false);
+                    nextItem.put("completedDates", new JSONArray());
+                    nextItem.put("preReminderMinutes", 0);
+                    nextItem.put("dependsOnId", itemId);
+                    nextItem.put("pinnedToWidget", false);
+                    nextItem.put("createdAt", System.currentTimeMillis());
+
+                    JSONArray prepended = new JSONArray();
+                    prepended.put(nextItem);
+                    for (int k = 0; k < arr.length(); k++) {
+                        prepended.put(arr.get(k));
+                    }
+                    arr = prepended;
+                }
             }
 
             if (changed) {
@@ -174,6 +210,60 @@ public class YadbanOfflineDb extends SQLiteOpenHelper {
         } catch (Exception ignored) {
         }
         return changed;
+    }
+
+    public synchronized String appendQuickCapturedItem(
+        Context context,
+        String title,
+        String category,
+        String dateStr,
+        String timeStr,
+        String timeBlock,
+        String notes,
+        String locationHint
+    ) {
+        if (title == null || title.trim().isEmpty()) return null;
+        String todayKey = getTodayDateKey();
+        String existingJson = getItemsJson();
+        try {
+            JSONArray existing = existingJson != null && !existingJson.isEmpty()
+                ? new JSONArray(existingJson)
+                : new JSONArray();
+
+            String id = "mem-" + System.currentTimeMillis() + "-native";
+            JSONObject item = new JSONObject();
+            item.put("id", id);
+            item.put("title", title.trim());
+            item.put("category", category != null && !category.isEmpty() ? category : "work");
+            item.put("dateStr", dateStr != null ? dateStr : "");
+            item.put("timeStr", timeStr != null ? timeStr : "");
+            item.put("timeBlock", timeBlock != null && !timeBlock.isEmpty() ? timeBlock : "morning");
+            item.put("repeatDaily", false);
+            item.put("completed", false);
+            item.put("completedDates", new JSONArray());
+            item.put("preReminderMinutes", (timeStr != null && !timeStr.isEmpty()) ? 10 : 0);
+            if (notes != null && !notes.trim().isEmpty()) {
+                item.put("notes", notes.trim());
+            }
+            if (locationHint != null && !locationHint.trim().isEmpty()) {
+                item.put("locationHint", locationHint.trim());
+            }
+            item.put("pinnedToWidget", "anchor".equals(category));
+            item.put("createdAt", System.currentTimeMillis());
+
+            JSONArray next = new JSONArray();
+            next.put(item);
+            for (int i = 0; i < existing.length(); i++) {
+                next.put(existing.get(i));
+            }
+
+            String updatedItems = next.toString();
+            String widgetPayload = rebuildWidgetPayload(next, todayKey);
+            saveSnapshot(context, updatedItems, getSettingsJson(), widgetPayload);
+            return id;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public synchronized boolean snoozeItem(Context context, String itemId, int minutes) {

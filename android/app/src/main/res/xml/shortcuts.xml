@@ -7,10 +7,8 @@
         android:shortcutShortLabel="@string/shortcut_quick_add">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetClass="ir.yadban.app.MainActivity"
-            android:targetPackage="ir.yadban.app">
-            <extra android:name="yadban_action" android:value="quick-add" />
-        </intent>
+            android:targetClass="ir.yadban.app.YadbanQuickCaptureActivity"
+            android:targetPackage="ir.yadban.app" />
     </shortcut>
     <shortcut
         android:enabled="true"

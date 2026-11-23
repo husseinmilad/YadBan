@@ -225,17 +225,21 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
             </div>
           </div>
 
-          {/* Native Android Widget Placement Guide */}
+          {/* Native Android Anywhere-Capture Guide (Widgets, Shortcuts & Quick Settings Tile) */}
           <div className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-4 sm:p-5 flex items-start gap-3">
             <span className="w-10 h-10 rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-soft-text)] flex items-center justify-center shrink-0">
               <Smartphone className="w-5 h-5" />
             </span>
-            <div>
+            <div className="space-y-1.5">
               <p className="text-sm font-bold text-[var(--text-primary)]">
-                افزودن و تغییر عرض ویجت واقعی روی صفحه اول گوشی (APK اندروید)
+                ثبت از هر جای گوشی (ویجت، میان‌بر صفحه اصلی و کاشی نوار بالا)
               </p>
-              <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">
-                روی فضای خالی صفحه اصلی گوشی لمس طولانی کنید ← Widgets ← یکی از ویجت‌های «برنامه امروز یادبان» یا «ثبت فوری یادبان» را قرار دهید. با نگه داشتن انگشت روی ویجت می‌توانید عرض آن را از ۲ ستون تا تمام عرض صفحه تغییر دهید.
+              <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                ۱) <strong>ویجت صفحه اول:</strong> روی فضای خالی صفحه اصلی لمس طولانی کنید و ویجت «برنامه امروز» یا «ثبت فوری» را قرار دهید (امکان تغییر عرض افقی تا تمام عرض وجود دارد).
+                <br />
+                ۲) <strong>کاشی نوار ابزار (Quick Settings):</strong> نوار اعلان‌های بالای گوشی را پایین بکشید، گزینه ویرایش کاشی‌ها را بزنید و کاشی «یادبان — ثبت فوری» را اضافه کنید تا بدون باز کردن کامل برنامه یادآور ثبت شود.
+                <br />
+                ۳) <strong>میان‌بر آیکون:</strong> با لمس طولانی آیکون یادبان، میان‌برهای «ثبت فوری»، «ضبط صوتی» و «صندوق ذهن» باز می‌شوند.
                 {isNativeAndroidApp() ? ' همگام‌سازی بومی هم‌اکنون فعال است.' : ''}
               </p>
             </div>

@@ -7,8 +7,11 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { AndroidWidgetRenderer } from './components/AndroidWidgetRenderer';
+import { BrainDumpBatchModal } from './components/BrainDumpBatchModal';
 import { BrainDumpVaultView } from './components/BrainDumpVaultView';
+import { DailyReviewModal } from './components/DailyReviewModal';
 import { FloatingMiniWidget } from './components/FloatingMiniWidget';
+import { FocusModeOverlay } from './components/FocusModeOverlay';
 import { HeadsUpReminderBanner } from './components/HeadsUpReminderBanner';
 import { PersonalizationSettingsView } from './components/PersonalizationSettingsView';
 import { QuickCaptureModal } from './components/QuickCaptureModal';
@@ -22,13 +25,21 @@ import {
 import {
   ActiveReminderAlert,
   ActiveTab,
+  MemoryCategory,
   MemoryItem,
   UserSettings,
   WidgetConfig,
 } from './types/memory';
 import { playChime, sendBrowserNotification } from './utils/audioAndVoice';
-import { getLocalDateKey, parseQuickCapture, toPersianDigits } from './utils/dateFa';
 import {
+  addDaysToDateKey,
+  getLocalDateKey,
+  parseQuickCapture,
+  toPersianDigits,
+} from './utils/dateFa';
+import { deletePhotoBlob } from './utils/mediaStorage';
+import {
+  getNativePermissionsStatus,
   isNativeAndroidApp,
   loadNativeOfflineData,
   syncOfflineStateAndAlarms,
@@ -54,9 +65,15 @@ export default function App() {
   const [items, setItems] = useState<MemoryItem[]>(() =>
     loadFromStorage(STORAGE_ITEMS_KEY, createSeedItems)
   );
-  const [settings, setSettings] = useState<UserSettings>(() =>
-    loadFromStorage(STORAGE_SETTINGS_KEY, () => DEFAULT_SETTINGS)
-  );
+  const [settings, setSettings] = useState<UserSettings>(() => {
+    const loaded = loadFromStorage(STORAGE_SETTINGS_KEY, () => DEFAULT_SETTINGS);
+    return {
+      ...DEFAULT_SETTINGS,
+      ...loaded,
+      customCategories: loaded.customCategories || DEFAULT_SETTINGS.customCategories,
+      templates: loaded.templates || DEFAULT_SETTINGS.templates,
+    };
+  });
   const [widgets, setWidgets] = useState<WidgetConfig[]>(() =>
     loadFromStorage(STORAGE_WIDGETS_KEY, () => DEFAULT_WIDGETS)
   );
@@ -68,24 +85,53 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MemoryItem | null>(null);
   const [prefillText, setPrefillText] = useState('');
+  const [modalInitialCategory, setModalInitialCategory] = useState<MemoryCategory | undefined>(
+    undefined
+  );
+
+  const [focusOpen, setFocusOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [brainDumpOpen, setBrainDumpOpen] = useState(false);
+
   const [activeAlert, setActiveAlert] = useState<ActiveReminderAlert | null>(null);
+  const [needsPermissionAttention, setNeedsPermissionAttention] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
 
   const firedKeysRef = useRef<Set<string>>(new Set());
+  const lastNotifiedItemMsRef = useRef<Map<string, number>>(new Map());
   const nativeBootLoadedRef = useRef(false);
+
+  const refreshPermissionSummary = useCallback(async () => {
+    const st = await getNativePermissionsStatus();
+    if (st.isNativeAndroid) {
+      setNeedsPermissionAttention(
+        st.notifications !== 'granted' || st.exactAlarm !== 'granted'
+      );
+    } else {
+      setNeedsPermissionAttention(false);
+    }
+  }, []);
 
   // Hydrate from Android native SQLite database on launch & resume (syncs widget/notification actions)
   const pullFromNativeDb = useCallback(async () => {
+    void refreshPermissionSummary();
     if (!isNativeAndroidApp()) return;
     const { items: nativeItems, settings: nativeSettings } = await loadNativeOfflineData();
     if (nativeItems && Array.isArray(nativeItems)) {
       setItems(nativeItems);
     }
     if (nativeSettings) {
-      setSettings((prev) => ({ ...prev, ...nativeSettings }));
+      setSettings((prev) => ({
+        ...DEFAULT_SETTINGS,
+        ...prev,
+        ...nativeSettings,
+        customCategories:
+          nativeSettings.customCategories || prev.customCategories || DEFAULT_SETTINGS.customCategories,
+        templates: nativeSettings.templates || prev.templates || DEFAULT_SETTINGS.templates,
+      }));
     }
     nativeBootLoadedRef.current = true;
-  }, []);
+  }, [refreshPermissionSummary]);
 
   useEffect(() => {
     void pullFromNativeDb();
@@ -105,7 +151,10 @@ export default function App() {
       if (actionParam === 'quick-add' || actionParam === 'voice-add') {
         setEditingItem(null);
         setPrefillText('');
+        setModalInitialCategory(undefined);
         setModalOpen(true);
+      } else if (actionParam === 'brain-dump') {
+        setBrainDumpOpen(true);
       }
       if (
         tabParam === 'today' ||
@@ -184,22 +233,37 @@ export default function App() {
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 2600);
+    setTimeout(() => setToastMsg(''), 2800);
   }, []);
 
   const triggerAlert = useCallback(
-    async (item: MemoryItem, isPreReminder: boolean) => {
+    async (
+      item: MemoryItem,
+      isPreReminder: boolean,
+      stageLabel: string,
+      skipNativeNotification = false
+    ) => {
+      const now = Date.now();
+      const lastMs = lastNotifiedItemMsRef.current.get(item.id) || 0;
+      if (!skipNativeNotification && item.id !== 'test' && now - lastMs < 90000) {
+        return;
+      }
+      lastNotifiedItemMsRef.current.set(item.id, now);
+
       const alertObj: ActiveReminderAlert = {
         item,
-        triggeredAt: Date.now(),
+        triggeredAt: now,
         isPreReminder,
+        stageLabel,
       };
       setActiveAlert(alertObj);
       void playChime(settings.chimeType);
 
+      if (skipNativeNotification) return;
+
       const notifTitle = isPreReminder
         ? `پیش‌یادآوری (${toPersianDigits(item.preReminderMinutes)} دقیقه مانده)`
-        : 'یادآور هوشمند یادبان';
+        : stageLabel || 'یادآور هوشمند یادبان';
 
       const sentNative = await triggerNativeAlertNotification(
         item.id,
@@ -214,13 +278,14 @@ export default function App() {
     [settings.chimeType]
   );
 
-  // Foreground In-App Offline Scheduler (runs every 15 seconds while app is open)
+  // Foreground In-App Offline Scheduler (deduplicated staged reminders + repeatUntilDone)
   useEffect(() => {
     const checkReminders = () => {
       const now = new Date();
       const todayKey = getLocalDateKey(now);
       const nowMs = now.getTime();
       const curMinOfDay = now.getHours() * 60 + now.getMinutes();
+      const onNativeAndroid = isNativeAndroidApp();
 
       for (const item of items) {
         const isDone = item.repeatDaily
@@ -235,7 +300,7 @@ export default function App() {
             setItems((prev) =>
               prev.map((x) => (x.id === item.id ? { ...x, snoozedUntil: undefined } : x))
             );
-            void triggerAlert(item, false);
+            void triggerAlert(item, false, 'یادآور تعویقی', onNativeAndroid);
             break;
           }
         }
@@ -251,7 +316,7 @@ export default function App() {
           const key = `${item.id}-exact-${todayKey}-${item.timeStr}`;
           if (!firedKeysRef.current.has(key)) {
             firedKeysRef.current.add(key);
-            void triggerAlert(item, false);
+            void triggerAlert(item, false, 'موعد یادآور', onNativeAndroid);
             break;
           }
         }
@@ -260,21 +325,23 @@ export default function App() {
           const preKey = `${item.id}-pre-${todayKey}-${item.timeStr}`;
           if (!firedKeysRef.current.has(preKey)) {
             firedKeysRef.current.add(preKey);
-            void triggerAlert(item, true);
+            void triggerAlert(item, true, 'پیش‌یادآوری مرحله‌ای', onNativeAndroid);
             break;
           }
         }
 
+        const shouldRepeat = item.repeatUntilDone || settings.autoRepeatNudge;
+        const maxFollowupWindow = item.repeatUntilDone ? 180 : 45;
         if (
-          settings.autoRepeatNudge &&
+          shouldRepeat &&
           curMinOfDay > targetMin &&
           (curMinOfDay - targetMin) % settings.nudgeIntervalMin === 0 &&
-          curMinOfDay - targetMin <= 45
+          curMinOfDay - targetMin <= maxFollowupWindow
         ) {
           const nudgeKey = `${item.id}-nudge-${todayKey}-${curMinOfDay}`;
           if (!firedKeysRef.current.has(nudgeKey)) {
             firedKeysRef.current.add(nudgeKey);
-            void triggerAlert(item, false);
+            void triggerAlert(item, false, 'پیگیری تا زمان انجام', onNativeAndroid);
             break;
           }
         }
@@ -320,20 +387,90 @@ export default function App() {
       preReminderMinutes: parsed.timeStr ? 10 : 0,
       phoneNumber: parsed.phoneNumber,
       contactName: parsed.contactName,
+      locationHint: parsed.locationHint,
+      priority: parsed.priority,
+      nextStepTitle: parsed.nextStepTitle,
       pinnedToWidget: parsed.pinnedToWidget,
       createdAt: Date.now(),
     };
     setItems((prev) => [created, ...prev]);
-    showToast(
-      parsed.phoneNumber
-        ? 'شماره تلفن در صندوق ذهن و ویجت ثبت شد'
-        : 'مورد جدید با تشخیص هوشمند ثبت شد'
-    );
+    if (parsed.phoneNumber) {
+      showToast('شماره تلفن در صندوق ذهن و ویجت ثبت شد');
+    } else if (parsed.locationHint) {
+      showToast('محل وسیله در دفترچه «کجا گذاشتم؟» ثبت شد');
+    } else if (parsed.nextStepTitle) {
+      showToast('یادآور به همراه مرحله بعدی ثبت شد');
+    } else {
+      showToast('مورد جدید با تشخیص هوشمند ثبت شد');
+    }
+  };
+
+  const handleQuickSaveObjectLocation = (objectName: string, locationHint: string) => {
+    const created: MemoryItem = {
+      id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: objectName,
+      category: 'anchor',
+      dateStr: '',
+      timeStr: '',
+      timeBlock: 'morning',
+      repeatDaily: false,
+      completed: false,
+      completedDates: [],
+      preReminderMinutes: 0,
+      locationHint,
+      pinnedToWidget: true,
+      createdAt: Date.now(),
+    };
+    setItems((prev) => [created, ...prev]);
+    showToast(`محل «${objectName}» در دفترچه ثبت شد`);
+  };
+
+  const handleSaveBatch = (batchItems: Omit<MemoryItem, 'id' | 'createdAt'>[]) => {
+    const baseTs = Date.now();
+    const createdList: MemoryItem[] = batchItems.map((data, idx) => ({
+      ...data,
+      id: `mem-${baseTs + idx}-${Math.random().toString(36).slice(2, 5)}`,
+      createdAt: baseTs + idx,
+    }));
+    setItems((prev) => [...createdList, ...prev]);
+    showToast(`${toPersianDigits(createdList.length)} مورد از ذهن‌خالی‌کن ثبت و دسته‌بندی شد`);
   };
 
   const handleToggleComplete = (id: string, dateKey: string) => {
-    setItems((prev) =>
-      prev.map((item) => {
+    const target = items.find((item) => item.id === id);
+    if (!target) return;
+
+    const wasDone = target.repeatDaily
+      ? target.completedDates.includes(dateKey)
+      : target.completed;
+    const nowBecomesDone = !wasDone;
+
+    let autoNextStep: MemoryItem | null = null;
+    if (nowBecomesDone && target.nextStepTitle?.trim()) {
+      const nextDateKey = dateKey || getLocalDateKey(new Date());
+      autoNextStep = {
+        id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: target.nextStepTitle.trim(),
+        category: target.category,
+        dateStr: nextDateKey,
+        timeStr: '',
+        timeBlock: target.timeBlock,
+        repeatDaily: false,
+        completed: false,
+        completedDates: [],
+        preReminderMinutes: 0,
+        dependsOnId: target.id,
+        pinnedToWidget: false,
+        createdAt: Date.now(),
+      };
+    }
+
+    const dependentWaiting = nowBecomesDone
+      ? items.find((x) => x.dependsOnId === id && !x.completed)
+      : undefined;
+
+    setItems((prev) => {
+      const updated = prev.map((item) => {
         if (item.id !== id) return item;
         if (item.repeatDaily) {
           const exists = item.completedDates.includes(dateKey);
@@ -345,10 +482,18 @@ export default function App() {
           };
         }
         return { ...item, completed: !item.completed, snoozedUntil: undefined };
-      })
-    );
+      });
+      return autoNextStep ? [autoNextStep, ...updated] : updated;
+    });
+
     if (activeAlert?.item.id === id) {
       setActiveAlert(null);
+    }
+
+    if (autoNextStep) {
+      showToast(`مرحله بعدی فعال شد: ${autoNextStep.title}`);
+    } else if (dependentWaiting) {
+      showToast(`مرحله بعدی آماده است: ${dependentWaiting.title}`);
     }
   };
 
@@ -358,13 +503,34 @@ export default function App() {
       prev.map((item) => (item.id === id ? { ...item, snoozedUntil: until } : item))
     );
     setActiveAlert(null);
-    showToast(`آلارم برای ${toPersianDigits(minutes)} دقیقه بعد تنظیم شد`);
+    if (minutes >= 60) {
+      const hours = Math.round(minutes / 60);
+      showToast(`آلارم برای حدود ${toPersianDigits(hours)} ساعت بعد تعویق شد`);
+    } else {
+      showToast(`آلارم برای ${toPersianDigits(minutes)} دقیقه بعد تنظیم شد`);
+    }
+  };
+
+  const handleMoveTasksToTomorrow = (ids: string[]) => {
+    const tomorrowKey = addDaysToDateKey(getLocalDateKey(new Date()), 1);
+    const idSet = new Set(ids);
+    setItems((prev) =>
+      prev.map((item) =>
+        idSet.has(item.id)
+          ? { ...item, dateStr: tomorrowKey, snoozedUntil: undefined }
+          : item
+      )
+    );
+    showToast(`${toPersianDigits(ids.length)} کار انجام‌نشده به فردا منتقل شد`);
   };
 
   const handleDeleteItem = (id: string) => {
     const target = items.find((i) => i.id === id);
     if (target?.voiceNoteId) {
       void deleteVoiceBlob(target.voiceNoteId);
+    }
+    if (target?.photoId) {
+      void deletePhotoBlob(target.photoId);
     }
     setItems((prev) => prev.filter((item) => item.id !== id));
     showToast('مورد حذف شد');
@@ -381,9 +547,7 @@ export default function App() {
   const handleScheduleToday = (id: string) => {
     const todayKey = getLocalDateKey(new Date());
     setItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, dateStr: todayKey } : item
-      )
+      prev.map((item) => (item.id === id ? { ...item, dateStr: todayKey } : item))
     );
     showToast('به برنامه امروز اضافه شد');
   };
@@ -405,7 +569,7 @@ export default function App() {
         pinnedToWidget: false,
         createdAt: Date.now(),
       };
-    void triggerAlert(sample, false);
+    void triggerAlert(sample, false, 'تست هشدار یادبان', false);
   };
 
   const handleResetTasks = (mode: 'clear_all' | 'uncheck_done') => {
@@ -413,6 +577,9 @@ export default function App() {
       items.forEach((item) => {
         if (item.voiceNoteId) {
           void deleteVoiceBlob(item.voiceNoteId);
+        }
+        if (item.photoId) {
+          void deletePhotoBlob(item.photoId);
         }
       });
       setItems([]);
@@ -443,11 +610,13 @@ export default function App() {
   );
 
   const navLinks: { id: ActiveTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'today', label: 'برنامه امروز', icon: <CalendarCheck className="w-5 h-5" /> },
+    { id: 'today', label: 'امروز', icon: <CalendarCheck className="w-5 h-5" /> },
     { id: 'vault', label: 'صندوق ذهن', icon: <Archive className="w-5 h-5" /> },
     { id: 'widgets', label: 'ویجت‌ها', icon: <LayoutGrid className="w-5 h-5" /> },
-    { id: 'settings', label: 'شخصی‌سازی', icon: <SlidersHorizontal className="w-5 h-5" /> },
+    { id: 'settings', label: 'تنظیمات', icon: <SlidersHorizontal className="w-5 h-5" /> },
   ];
+
+  const reviewPeriod = new Date().getHours() >= 17 ? 'evening' : 'morning';
 
   return (
     <div className="min-h-screen bg-[var(--bg-canvas)] text-[var(--text-primary)] pb-24 md:pb-10">
@@ -461,7 +630,7 @@ export default function App() {
 
       {/* Top Navigation Bar */}
       <header className="sticky top-0 z-30 h-14 md:h-16 bg-[var(--bg-canvas)]/90 backdrop-blur-md border-b border-[var(--border-subtle)]">
-        <div className="max-w-7xl mx-auto h-full px-4 sm:px-6 flex items-center justify-between gap-8">
+        <div className="max-w-7xl mx-auto h-full px-4 sm:px-6 flex items-center justify-between gap-6">
           <button
             type="button"
             onClick={() => setActiveTab('today')}
@@ -493,12 +662,20 @@ export default function App() {
             })}
           </nav>
 
-          <div className="flex items-center shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setBrainDumpOpen(true)}
+              className="hidden sm:inline-flex min-h-[40px] md:min-h-[44px] items-center rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-surface-tonal)] whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              ذهن‌خالی‌کن
+            </button>
             <button
               type="button"
               onClick={() => {
                 setEditingItem(null);
                 setPrefillText('');
+                setModalInitialCategory(undefined);
                 setModalOpen(true);
               }}
               className="min-h-[40px] md:min-h-[44px] inline-flex items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--accent)] px-4 py-2 text-xs sm:text-sm font-bold text-[var(--accent-on)] hover:opacity-95 active:scale-[0.98] transition-all whitespace-nowrap shrink-0 cursor-pointer"
@@ -519,21 +696,29 @@ export default function App() {
                 items={items}
                 settings={settings}
                 selectedDateKey={selectedDateKey}
+                needsPermissionAttention={needsPermissionAttention}
                 onSelectDateKey={setSelectedDateKey}
                 onToggleComplete={handleToggleComplete}
                 onQuickAdd={handleQuickAdd}
-                onOpenModalForNew={(prefill = '') => {
+                onOpenModalForNew={(prefill = '', category) => {
                   setEditingItem(null);
                   setPrefillText(prefill);
+                  setModalInitialCategory(category);
                   setModalOpen(true);
                 }}
                 onEditItem={(item) => {
                   setEditingItem(item);
                   setPrefillText('');
+                  setModalInitialCategory(undefined);
                   setModalOpen(true);
                 }}
                 onDeleteItem={handleDeleteItem}
                 onSnoozeItem={handleSnooze}
+                onOpenFocusMode={() => {
+                  setFocusOpen(true);
+                }}
+                onOpenDailyReview={() => setReviewOpen(true)}
+                onGoToSettings={() => setActiveTab('settings')}
               />
             </div>
 
@@ -565,6 +750,7 @@ export default function App() {
                     onOpenCaptureModal={() => {
                       setEditingItem(null);
                       setPrefillText('');
+                      setModalInitialCategory(undefined);
                       setModalOpen(true);
                     }}
                   />
@@ -575,14 +761,18 @@ export default function App() {
         ) : activeTab === 'vault' ? (
           <BrainDumpVaultView
             items={items}
-            onOpenModalForNew={() => {
+            onOpenModalForNew={(prefill = '', category) => {
               setEditingItem(null);
-              setPrefillText('');
+              setPrefillText(prefill);
+              setModalInitialCategory(category);
               setModalOpen(true);
             }}
+            onOpenBrainDump={() => setBrainDumpOpen(true)}
+            onQuickSaveObjectLocation={handleQuickSaveObjectLocation}
             onEditItem={(item) => {
               setEditingItem(item);
               setPrefillText('');
+              setModalInitialCategory(undefined);
               setModalOpen(true);
             }}
             onDeleteItem={handleDeleteItem}
@@ -606,6 +796,7 @@ export default function App() {
             onOpenCaptureModal={() => {
               setEditingItem(null);
               setPrefillText('');
+              setModalInitialCategory(undefined);
               setModalOpen(true);
             }}
             onNavigateTab={(tab) => setActiveTab(tab)}
@@ -667,6 +858,7 @@ export default function App() {
           onOpenModal={() => {
             setEditingItem(null);
             setPrefillText('');
+            setModalInitialCategory(undefined);
             setModalOpen(true);
           }}
         />
@@ -680,6 +872,46 @@ export default function App() {
         initialItem={editingItem}
         defaultDateKey={selectedDateKey}
         initialRawText={prefillText}
+        initialCategory={modalInitialCategory}
+        customCategories={settings.customCategories}
+        templates={settings.templates}
+        existingItems={items}
+        enablePhotoOcr={settings.enablePhotoOcr}
+      />
+
+      {/* Distraction-Free Focus Mode Overlay */}
+      <FocusModeOverlay
+        isOpen={focusOpen}
+        items={items}
+        dateKey={selectedDateKey}
+        onClose={() => setFocusOpen(false)}
+        onComplete={(id) => handleToggleComplete(id, selectedDateKey)}
+        onSnooze={handleSnooze}
+        onEdit={(item) => {
+          setFocusOpen(false);
+          setEditingItem(item);
+          setPrefillText('');
+          setModalInitialCategory(undefined);
+          setModalOpen(true);
+        }}
+      />
+
+      {/* Daily Brief & Evening Carryover Modal */}
+      <DailyReviewModal
+        isOpen={reviewOpen}
+        initialMode={reviewPeriod}
+        items={items}
+        onClose={() => setReviewOpen(false)}
+        onToggleComplete={handleToggleComplete}
+        onMoveTasksToTomorrow={handleMoveTasksToTomorrow}
+      />
+
+      {/* Brain Dump Multi-Line Batcher Modal */}
+      <BrainDumpBatchModal
+        isOpen={brainDumpOpen}
+        onClose={() => setBrainDumpOpen(false)}
+        defaultDateKey={selectedDateKey}
+        onSaveBatch={handleSaveBatch}
       />
 
       {/* Subtle Action Feedback Toast */}

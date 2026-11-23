@@ -86,6 +86,7 @@ public class YadbanAlarmScheduler {
                 String dateStr = item.optString("dateStr", "");
                 String timeStr = item.optString("timeStr", "");
                 boolean repeatDaily = item.optBoolean("repeatDaily", false);
+                boolean repeatUntilDone = item.optBoolean("repeatUntilDone", false);
                 int preMinutes = item.optInt("preReminderMinutes", 0);
                 long snoozedUntil = item.optLong("snoozedUntil", 0L);
 
@@ -187,7 +188,7 @@ public class YadbanAlarmScheduler {
                         }
                     }
 
-                    if (autoRepeatNudge) {
+                    if (autoRepeatNudge || repeatUntilDone) {
                         long nudgeMs = targetMs + nudgeIntervalMin * 60_000L;
                         int nudgeCode = (id + "-nudge").hashCode();
                         scheduleSingleAlarm(
@@ -196,12 +197,29 @@ public class YadbanAlarmScheduler {
                             nudgeCode,
                             nudgeMs,
                             id,
-                            "یادآوری مجدد یادبان",
+                            "پیگیری یادآور یادبان",
                             "هنوز انجام نشده: " + title,
                             false
                         );
                         newCodes.add(String.valueOf(nudgeCode));
                         scheduledCount++;
+
+                        if (repeatUntilDone) {
+                            long nudge2Ms = targetMs + (nudgeIntervalMin * 2L) * 60_000L;
+                            int nudge2Code = (id + "-nudge2").hashCode();
+                            scheduleSingleAlarm(
+                                context,
+                                am,
+                                nudge2Code,
+                                nudge2Ms,
+                                id,
+                                "تکرار تا زمان انجام",
+                                "در انتظار انجام: " + title,
+                                false
+                            );
+                            newCodes.add(String.valueOf(nudge2Code));
+                            scheduledCount++;
+                        }
                     }
                 }
             }
@@ -329,8 +347,20 @@ public class YadbanAlarmScheduler {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
 
+            Intent snooze60Intent = new Intent(context, YadbanActionReceiver.class);
+            snooze60Intent.setAction(YadbanActionReceiver.ACTION_SNOOZE_60);
+            snooze60Intent.putExtra("itemId", itemId);
+            snooze60Intent.putExtra("notifId", notifId);
+            PendingIntent snooze60Pi = PendingIntent.getBroadcast(
+                context,
+                (itemId + "-snooze60").hashCode(),
+                snooze60Intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+
             builder.addAction(0, "انجام شد", donePi);
             builder.addAction(0, "۱۰ دقیقه بعد", snoozePi);
+            builder.addAction(0, "۱ ساعت بعد", snooze60Pi);
         }
 
         try {

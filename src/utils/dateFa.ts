@@ -206,93 +206,190 @@ export function formatSecondsClockFa(date: Date = new Date()): { hm: string; sec
   };
 }
 
+export function formatJalaliShortLabel(dateKey: string): string {
+  if (!dateKey) return 'بدون تاریخ (صندوق ذهن)';
+  const todayKey = getLocalDateKey(new Date());
+  const tomorrowKey = addDaysToDateKey(todayKey, 1);
+  const afterTomorrowKey = addDaysToDateKey(todayKey, 2);
+  const parts = getJalaliDayParts(dateKey);
+  const full = `${parts.weekdayLong} ${parts.dayNum} ${parts.monthName}`;
+  if (dateKey === todayKey) return `امروز · ${parts.dayNum} ${parts.monthName}`;
+  if (dateKey === tomorrowKey) return `فردا · ${full}`;
+  if (dateKey === afterTomorrowKey) return `پس‌فردا · ${full}`;
+  return full;
+}
+
 export interface ParsedQuickCapture {
   title: string;
   category: MemoryCategory;
   phoneNumber?: string;
   contactName?: string;
+  locationHint?: string;
+  nextStepTitle?: string;
+  priority: 'normal' | 'important';
   timeStr: string;
   dateStr: string;
+  dateLabelFa: string;
   timeBlock: TimeBlock;
   pinnedToWidget: boolean;
   detectedHints: string[];
 }
 
+function getNextPersianWeekdayDateKey(targetPersianIndex: number): string {
+  const now = new Date();
+  const currentIdx = getPersianWeekdayIndex(now);
+  let diff = (targetPersianIndex - currentIdx + 7) % 7;
+  if (diff === 0) diff = 7;
+  return addDaysToDateKey(getLocalDateKey(now), diff);
+}
+
 export function parseQuickCapture(rawInput: string, activeDateKey?: string): ParsedQuickCapture {
   const normalized = toEnglishDigits(rawInput).trim();
   const hints: string[] = [];
-  let cleanTitle = rawInput.trim();
+  let workingText = normalized;
   let phoneNumber: string | undefined;
   let contactName: string | undefined;
+  let locationHint: string | undefined;
+  let nextStepTitle: string | undefined;
   let dateStr = activeDateKey || getLocalDateKey(new Date());
+  let explicitDateMatched = false;
   let timeStr = '';
+  let priority: 'normal' | 'important' = 'normal';
 
-  // 1. Detect Iranian mobile / landline / international phone numbers
+  // 0. Detect chained/dependent reminder ("بعد از X، Y" or "پس از انجام X، Y")
+  const chainMatch = workingText.match(/^(?:بعد\s*از|پس\s*از)(?:\s*انجام)?\s+(.+?)[،,;:\-]+\s*(.+)$/);
+  if (chainMatch && chainMatch[1].trim().length >= 2 && chainMatch[2].trim().length >= 2) {
+    workingText = chainMatch[1].trim();
+    nextStepTitle = chainMatch[2].trim();
+    hints.push(`مرحله بعد: ${nextStepTitle}`);
+  }
+
+  // 1. Detect importance words
+  if (/(?:مهم|فوری|ضروری|حتما|حتماً|اورژانسی)/.test(workingText)) {
+    priority = 'important';
+    hints.push('اولویت مهم');
+    workingText = workingText.replace(/(?:خیلی\s*)?(?:مهم|فوری|ضروری|حتما|حتماً|اورژانسی)/g, ' ');
+  }
+
+  // 2. Detect Iranian mobile / landline / international phone numbers
   const phoneRegex = /(?:\+98|0098|0)?9\d{9}|0\d{2,3}[-\s]?\d{7,8}|\b\d{8,11}\b/;
-  const phoneMatch = normalized.match(phoneRegex);
+  const phoneMatch = workingText.match(phoneRegex);
   if (phoneMatch) {
     phoneNumber = phoneMatch[0].replace(/[-\s]/g, '');
-    hints.push('شماره تلفن شناسایی شد');
-    const withoutPhone = toEnglishDigits(rawInput)
-      .replace(phoneMatch[0], '')
-      .replace(/(?:شماره|تلفن|موبایل|زنگ به|تماس با)/g, '')
+    hints.push(`شماره ${toPersianDigits(phoneNumber)}`);
+    workingText = workingText.replace(phoneMatch[0], ' ');
+    const cleanedContact = workingText
+      .replace(/(?:شماره|تلفن|موبایل|زنگ به|زنگ بزن|تماس با)/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
-    if (withoutPhone.length >= 2) {
-      contactName = withoutPhone;
-      cleanTitle = `تماس با ${withoutPhone}`;
-    } else {
-      cleanTitle = `شماره ثبت‌شده ${toPersianDigits(phoneNumber)}`;
+    if (cleanedContact.length >= 2) {
+      contactName = cleanedContact;
     }
   }
 
-  // 2. Detect relative time ("15 دقیقه دیگه", "نیم ساعت دیگه", "1 ساعت دیگه")
+  // 3. Detect relative time ("15 دقیقه دیگه", "نیم ساعت دیگه", "1 ساعت دیگه")
   const now = new Date();
-  const minMatch = normalized.match(/(\d+)\s*دقیقه\s*(?:دیگه|دیگر|بعد)/);
-  const hourMatch = normalized.match(/(\d+)\s*ساعت\s*(?:دیگه|دیگر|بعد)/);
+  const minMatch = workingText.match(/(\d+)\s*دقیقه\s*(?:دیگه|دیگر|بعد)/);
+  const hourMatch = workingText.match(/(\d+)\s*ساعت\s*(?:دیگه|دیگر|بعد)/);
   if (minMatch) {
     const mins = Math.min(Number(minMatch[1]), 600);
     const target = new Date(now.getTime() + mins * 60000);
     timeStr = `${String(target.getHours()).padStart(2, '0')}:${String(target.getMinutes()).padStart(2, '0')}`;
     dateStr = getLocalDateKey(target);
-    hints.push(`زمان ${toPersianDigits(timeStr)} تنظیم شد`);
-  } else if (/نیم\s*ساعت\s*(?:دیگه|دیگر|بعد)/.test(normalized)) {
+    explicitDateMatched = true;
+    workingText = workingText.replace(minMatch[0], ' ');
+    hints.push(`ساعت ${toPersianDigits(timeStr)}`);
+  } else if (/نیم\s*ساعت\s*(?:دیگه|دیگر|بعد)/.test(workingText)) {
     const target = new Date(now.getTime() + 30 * 60000);
     timeStr = `${String(target.getHours()).padStart(2, '0')}:${String(target.getMinutes()).padStart(2, '0')}`;
     dateStr = getLocalDateKey(target);
-    hints.push(`زمان ${toPersianDigits(timeStr)} تنظیم شد`);
+    explicitDateMatched = true;
+    workingText = workingText.replace(/نیم\s*ساعت\s*(?:دیگه|دیگر|بعد)/, ' ');
+    hints.push(`ساعت ${toPersianDigits(timeStr)}`);
   } else if (hourMatch) {
     const hrs = Math.min(Number(hourMatch[1]), 24);
     const target = new Date(now.getTime() + hrs * 3600000);
     timeStr = `${String(target.getHours()).padStart(2, '0')}:${String(target.getMinutes()).padStart(2, '0')}`;
     dateStr = getLocalDateKey(target);
-    hints.push(`زمان ${toPersianDigits(timeStr)} تنظیم شد`);
+    explicitDateMatched = true;
+    workingText = workingText.replace(hourMatch[0], ' ');
+    hints.push(`ساعت ${toPersianDigits(timeStr)}`);
   }
 
-  // 3. Detect explicit HH:MM or "ساعت 18"
+  // 4. Detect explicit HH:MM or "ساعت 8" / "ساعت 8 و نیم" / "ساعت 8 شب"
   if (!timeStr) {
-    const hhmm = normalized.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
-    const saat = normalized.match(/ساعت\s*([01]?\d|2[0-3])(?:\s*و\s*(نیم))?/);
+    const hhmm = workingText.match(/(?:ساعت\s*)?\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+    const saat = workingText.match(/ساعت\s*([01]?\d|2[0-3])(?:\s*و\s*(نیم))?(?:\s*(صبح|ظهر|عصر|شب|بعدازظهر))?/);
     if (hhmm) {
-      timeStr = `${hhmm[1].padStart(2, '0')}:${hhmm[2]}`;
+      let hr = Number(hhmm[1]);
+      if (/(?:شب|عصر|بعدازظهر)/.test(workingText) && hr >= 1 && hr <= 11) {
+        hr += 12;
+      }
+      timeStr = `${String(hr).padStart(2, '0')}:${hhmm[2]}`;
+      workingText = workingText.replace(hhmm[0], ' ');
       hints.push(`ساعت ${toPersianDigits(timeStr)}`);
     } else if (saat) {
       let hr = Number(saat[1]);
-      if (/شب|عصر|بعدازظهر/.test(normalized) && hr >= 1 && hr <= 11) {
+      const periodHint = saat[3] || '';
+      if ((/شب|عصر|بعدازظهر/.test(periodHint) || /شب|عصر|بعدازظهر/.test(workingText)) && hr >= 1 && hr <= 11) {
+        hr += 12;
+      } else if (periodHint === 'ظهر' && hr >= 1 && hr <= 4) {
         hr += 12;
       }
       const mins = saat[2] ? '30' : '00';
       timeStr = `${String(hr).padStart(2, '0')}:${mins}`;
+      workingText = workingText.replace(saat[0], ' ');
       hints.push(`ساعت ${toPersianDigits(timeStr)}`);
     }
   }
 
-  // 4. Detect tomorrow
-  if (/فردا/.test(normalized)) {
-    dateStr = addDaysToDateKey(getLocalDateKey(new Date()), 1);
-    hints.push('برای فردا');
+  // 5. Detect date expressions ("پس‌فردا", "فردا", "امروز", weekdays)
+  const todayKey = getLocalDateKey(new Date());
+  if (/پس[\s‌]*فردا/.test(workingText)) {
+    dateStr = addDaysToDateKey(todayKey, 2);
+    explicitDateMatched = true;
+    workingText = workingText.replace(/پس[\s‌]*فردا/g, ' ');
+    hints.push('پس‌فردا');
+  } else if (/فردا/.test(workingText)) {
+    dateStr = addDaysToDateKey(todayKey, 1);
+    explicitDateMatched = true;
+    workingText = workingText.replace(/فردا/g, ' ');
+    hints.push('فردا');
+  } else if (/امروز/.test(workingText)) {
+    dateStr = todayKey;
+    explicitDateMatched = true;
+    workingText = workingText.replace(/امروز/g, ' ');
+  } else {
+    const weekdayPatterns: { regex: RegExp; idx: number; label: string }[] = [
+      { regex: /چهار[\s‌]*شنبه/, idx: 4, label: 'چهارشنبه' },
+      { regex: /پنج[\s‌]*شنبه/, idx: 5, label: 'پنج‌شنبه' },
+      { regex: /سه[\s‌]*شنبه/, idx: 3, label: 'سه‌شنبه' },
+      { regex: /دو[\s‌]*شنبه/, idx: 2, label: 'دوشنبه' },
+      { regex: /یک[\s‌]*شنبه/, idx: 1, label: 'یکشنبه' },
+      { regex: /جمعه/, idx: 6, label: 'جمعه' },
+      { regex: /شنبه/, idx: 0, label: 'شنبه' },
+    ];
+    for (const wp of weekdayPatterns) {
+      if (wp.regex.test(workingText)) {
+        dateStr = getNextPersianWeekdayDateKey(wp.idx);
+        explicitDateMatched = true;
+        workingText = workingText.replace(wp.regex, ' ');
+        hints.push(wp.label);
+        break;
+      }
+    }
   }
 
-  // 5. Detect category
+  // 6. Detect "کجا گذاشتم؟" location pattern ("X را گذاشتم توی Y" / "محل X: Y")
+  const putMatch = workingText.match(/^(.+?)\s*(?:رو|را)?\s*(?:گذاشتم|قرار\s*دادم|هست|توی|در)\s+(.+)$/);
+  if (
+    putMatch &&
+    /کلید|عینک|کیف|مدارک|پاسپورت|ساعت|کارت|گوشی|دفتر|کنترل|شارژر|کفش|گذاشتم/.test(normalized)
+  ) {
+    locationHint = putMatch[2].trim();
+  }
+
+  // 7. Detect category
   let category: MemoryCategory = phoneNumber ? 'phone' : 'idea';
   let pinnedToWidget = Boolean(phoneNumber);
 
@@ -300,23 +397,41 @@ export function parseQuickCapture(rawInput: string, activeDateKey?: string): Par
     if (/باشگاه|ورزش|تمرین|دویدن|پیاده‌روی|پیاده روی|یوگا|شنا|بدنسازی|کشش/.test(normalized)) {
       category = 'fitness';
       hints.push('دسته: ورزشی');
-    } else if (/دارو|قرص|ویتامین|دکتر|ویزیت|آزمایش|آب|فشار|پزشک|کپسول/.test(normalized)) {
+    } else if (/دارو|قرص|ویتامین|دکتر|ویزیت|آزمایش|آب|فشار|پزشک|کپسول|شربت/.test(normalized)) {
       category = 'health';
       pinnedToWidget = true;
       hints.push('دسته: دارو و سلامت');
-    } else if (/کلید|پارکینگ|طبقه|رمز|کارت|عینک|کیف|مدارک|گذاشتم|پلاک|جای/.test(normalized)) {
+    } else if (/کلید|پارکینگ|طبقه|رمز|کارت|عینک|کیف|مدارک|گذاشتم|پلاک|پاسپورت|شارژر/.test(normalized)) {
       category = 'anchor';
       pinnedToWidget = true;
-      hints.push('دسته: لنگر حافظه');
-    } else if (/جلسه|گزارش|ایمیل|پروژه|کار|بانک|فاکتور|چک|مشتری|قرار/.test(normalized)) {
-      category = 'work';
-      hints.push('دسته: کاری');
-    } else if (/خرید|نان|شیر|میوه|سوپر|قبض|پست|سبزی|مرغ|گوشت/.test(normalized)) {
+      hints.push('دسته: کجا گذاشتم / لنگر حافظه');
+    } else if (/خرید|نان|شیر|میوه|سوپر|قبض|پست|سبزی|مرغ|گوشت|داروخانه/.test(normalized)) {
       category = 'errand';
       hints.push('دسته: خرید و روزمره');
-    } else if (timeStr) {
+    } else if (/جلسه|گزارش|ایمیل|پروژه|اداره|بانک|فاکتور|چک|مشتری|قرار|کار/.test(normalized)) {
+      category = 'work';
+      hints.push('دسته: کاری');
+    } else if (/تماس|زنگ|تلفن|پیام/.test(normalized)) {
+      category = 'phone';
+      hints.push('دسته: تماس');
+    } else if (timeStr || explicitDateMatched) {
       category = 'work';
     }
+  }
+
+  // Clean residual phrasing for title preview
+  let cleanTitle = workingText
+    .replace(/\b(?:صبح|ظهر|عصر|شب|به من یادآوری کن|یادم بنداز|یادآوری کن|لطفا|لطفاً)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[،,:\-\s]+|[،,:\-\s]+$/g, '')
+    .trim();
+
+  if (phoneNumber) {
+    cleanTitle = contactName
+      ? `تماس با ${contactName}`
+      : `شماره ثبت‌شده ${toPersianDigits(phoneNumber)}`;
+  } else if (!cleanTitle) {
+    cleanTitle = rawInput.trim();
   }
 
   const timeBlock: TimeBlock = timeStr
@@ -331,17 +446,57 @@ export function parseQuickCapture(rawInput: string, activeDateKey?: string): Par
             ? 'night'
             : 'anytime';
 
+  const finalDateStr = category === 'anchor' && !timeStr && !explicitDateMatched ? '' : dateStr;
+
   return {
     title: cleanTitle,
     category,
     phoneNumber,
     contactName,
+    locationHint,
+    nextStepTitle,
+    priority,
     timeStr,
-    dateStr: category === 'anchor' && !timeStr ? '' : dateStr,
+    dateStr: finalDateStr,
+    dateLabelFa: formatJalaliShortLabel(finalDateStr),
     timeBlock,
     pinnedToWidget,
     detectedHints: hints,
   };
+}
+
+export interface BrainDumpCandidate {
+  id: string;
+  rawLine: string;
+  parsed: ParsedQuickCapture;
+  kindLabel: 'یادآور زمان‌دار' | 'تماس' | 'مکان شیء' | 'کار روزانه' | 'یادداشت';
+}
+
+export function parseBrainDumpLines(multiLineText: string, activeDateKey?: string): BrainDumpCandidate[] {
+  const lines = multiLineText
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  return lines.map((line, idx) => {
+    const parsed = parseQuickCapture(line, activeDateKey);
+    let kindLabel: BrainDumpCandidate['kindLabel'] = 'یادداشت';
+    if (parsed.phoneNumber || parsed.category === 'phone') {
+      kindLabel = 'تماس';
+    } else if (parsed.category === 'anchor') {
+      kindLabel = 'مکان شیء';
+    } else if (parsed.timeStr) {
+      kindLabel = 'یادآور زمان‌دار';
+    } else if (parsed.category !== 'idea') {
+      kindLabel = 'کار روزانه';
+    }
+    return {
+      id: `dump-${idx}-${line.slice(0, 10)}`,
+      rawLine: line,
+      parsed,
+      kindLabel,
+    };
+  });
 }
 
 export const CATEGORY_META: Record<

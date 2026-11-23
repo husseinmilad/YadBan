@@ -38,6 +38,30 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- Lightweight Dialog Activity for Quick Settings Tile, Widget & Shortcut Capture -->
+        <activity
+            android:name=".YadbanQuickCaptureActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/shortcut_quick_add"
+            android:theme="@android:style/Theme.DeviceDefault.Light.Dialog.NoActionBar"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
+        <!-- Android Quick Settings Tile (Notification Shade Shortcut) -->
+        <service
+            android:name=".YadbanQuickTileService"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/quick_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.ACTIVE_TILE"
+                android:value="true" />
+        </service>
+
         <!-- Native AlarmManager Receiver -->
         <receiver
             android:name=".YadbanAlarmReceiver"

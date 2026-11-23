@@ -9,4 +9,5 @@
     <string name="shortcut_quick_add">ثبت فوری</string>
     <string name="shortcut_voice_add">ضبط صوتی آفلاین</string>
     <string name="shortcut_vault">صندوق ذهن</string>
+    <string name="quick_tile_label">ثبت فوری یادبان</string>
 </resources>

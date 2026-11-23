@@ -3,24 +3,31 @@ import {
   BatteryCharging,
   Bell,
   BellRing,
+  Camera,
   CheckCircle2,
   Copy,
   Download,
+  FileText,
   Mic,
   Moon,
   Palette,
+  Plus,
   RotateCcw,
   Share2,
   ShieldCheck,
   Sun,
+  Tag,
   Trash2,
   Upload,
   Volume2,
 } from 'lucide-react';
 import {
+  CustomCategory,
+  MemoryCategory,
   MemoryItem,
   NativePermissionsStatus,
   PaletteId,
+  TaskTemplate,
   UserSettings,
   WidgetConfig,
 } from '../types/memory';
@@ -29,7 +36,7 @@ import {
   playChime,
   unlockAlertSoundAndVibration,
 } from '../utils/audioAndVoice';
-import { toPersianDigits } from '../utils/dateFa';
+import { CATEGORY_META, toPersianDigits } from '../utils/dateFa';
 import {
   exportYadbanBackup,
   getNativePermissionsStatus,
@@ -89,6 +96,13 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
   const [showPasteRestore, setShowPasteRestore] = useState(false);
   const [pasteBackupText, setPasteBackupText] = useState('');
   const [feedbackMsg, setFeedbackMsg] = useState('');
+  const [newCatLabel, setNewCatLabel] = useState('');
+  const [newCatBase, setNewCatBase] = useState<MemoryCategory>('work');
+  const [newTplName, setNewTplName] = useState('');
+  const [newTplTitle, setNewTplTitle] = useState('');
+  const [newTplCat, setNewTplCat] = useState<MemoryCategory>('errand');
+  const [newTplTime, setNewTplTime] = useState('');
+  const [newTplImportant, setNewTplImportant] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshPermissions = async () => {
@@ -785,8 +799,240 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
               </div>
             )}
           </div>
+
+          {/* Photo OCR Recognition Toggle */}
+          <div className="rounded-[var(--radius-control)] border border-[var(--border-subtle)] p-4 flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <Camera className="w-4 h-4 text-[var(--accent)] mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-[var(--text-primary)]">
+                  تشخیص متن روی عکس برگه‌ها و کارت‌ها
+                </p>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  هنگام پیوست عکس به‌صورت آفلاین متن را استخراج و قابل جست‌وجو می‌کند.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onUpdateSettings({ enablePhotoOcr: !settings.enablePhotoOcr })}
+              className={`min-h-[40px] px-4 rounded-xl text-xs font-bold cursor-pointer shrink-0 ${
+                settings.enablePhotoOcr
+                  ? 'bg-[var(--accent)] text-[var(--accent-on)]'
+                  : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)]'
+              }`}
+            >
+              {settings.enablePhotoOcr ? 'فعال' : 'غیرفعال'}
+            </button>
+          </div>
         </section>
       </div>
+
+      {/* Custom Categories & Ready Templates Manager */}
+      <section className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 sm:p-6 space-y-5">
+        <div>
+          <h2 className="text-lg font-bold text-[var(--text-primary)]">
+            دسته‌های شخصی و الگوهای آماده
+          </h2>
+          <p className="text-xs text-[var(--text-muted)] mt-1">
+            دسته‌های اختصاصی بسازید و برای کارهای پرتکرار مثل خرید، کار اداری، تماس، دارو یا وسایل سفر الگوی آماده تعریف کنید.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Custom Categories */}
+          <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)]/60 border border-[var(--border-subtle)] p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
+              <Tag className="w-4 h-4 text-[var(--accent)]" />
+              <span>دسته‌های شخصی شما</span>
+            </div>
+
+            <div className="divide-y divide-[var(--border-subtle)] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3">
+              {(settings.customCategories || []).map((cat) => (
+                <div key={cat.id} className="py-2.5 flex items-center justify-between gap-2 text-xs">
+                  <div>
+                    <span className="font-bold text-[var(--text-primary)]">{cat.label}</span>
+                    <span className="mx-1.5 text-[var(--text-muted)]" aria-hidden="true">·</span>
+                    <span className="text-[var(--text-muted)]">
+                      پایه: {CATEGORY_META[cat.baseCategory].shortLabel}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateSettings({
+                        customCategories: (settings.customCategories || []).filter(
+                          (c) => c.id !== cat.id
+                        ),
+                      })
+                    }
+                    className="min-w-[34px] min-h-[34px] rounded-lg flex items-center justify-center text-[var(--sem-danger)] hover:bg-rose-500/10 cursor-pointer"
+                    aria-label={`حذف دسته ${cat.label}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={newCatLabel}
+                onChange={(e) => setNewCatLabel(e.target.value)}
+                placeholder="نام دسته جدید (مثلاً: پروژه خانه، خانواده)"
+                className="flex-1 min-h-[40px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3 text-xs text-[var(--text-primary)]"
+              />
+              <select
+                value={newCatBase}
+                onChange={(e) => setNewCatBase(e.target.value as MemoryCategory)}
+                className="min-h-[40px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 text-xs text-[var(--text-primary)]"
+              >
+                {(['work', 'errand', 'health', 'phone', 'fitness', 'anchor', 'idea'] as MemoryCategory[]).map(
+                  (c) => (
+                    <option key={c} value={c}>
+                      {CATEGORY_META[c].shortLabel}
+                    </option>
+                  )
+                )}
+              </select>
+              <button
+                type="button"
+                disabled={!newCatLabel.trim()}
+                onClick={() => {
+                  const nextCat: CustomCategory = {
+                    id: `cat-${Date.now()}`,
+                    label: newCatLabel.trim(),
+                    baseCategory: newCatBase,
+                    tone: 'important',
+                  };
+                  onUpdateSettings({
+                    customCategories: [...(settings.customCategories || []), nextCat],
+                  });
+                  setNewCatLabel('');
+                  setFeedbackMsg(`دسته شخصی «${nextCat.label}» اضافه شد.`);
+                }}
+                className="min-h-[40px] px-3.5 rounded-xl bg-[var(--accent)] text-[var(--accent-on)] text-xs font-bold inline-flex items-center justify-center gap-1 disabled:opacity-45 cursor-pointer whitespace-nowrap"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>افزودن</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Ready Templates */}
+          <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)]/60 border border-[var(--border-subtle)] p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
+              <FileText className="w-4 h-4 text-[var(--accent)]" />
+              <span>الگوهای آماده</span>
+            </div>
+
+            <div className="divide-y divide-[var(--border-subtle)] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3 max-h-56 overflow-y-auto">
+              {(settings.templates || []).map((tpl) => (
+                <div key={tpl.id} className="py-2.5 flex items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <p className="font-bold text-[var(--text-primary)] truncate">{tpl.name}</p>
+                    <p className="text-[11px] text-[var(--text-muted)] truncate">
+                      {tpl.defaultTitle}
+                      {tpl.defaultTimeStr ? ` · ساعت ${toPersianDigits(tpl.defaultTimeStr)}` : ''}
+                      {tpl.isImportant ? ' · مهم' : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateSettings({
+                        templates: (settings.templates || []).filter((t) => t.id !== tpl.id),
+                      })
+                    }
+                    className="min-w-[34px] min-h-[34px] rounded-lg flex items-center justify-center text-[var(--sem-danger)] hover:bg-rose-500/10 cursor-pointer shrink-0"
+                    aria-label={`حذف الگوی ${tpl.name}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={newTplName}
+                  onChange={(e) => setNewTplName(e.target.value)}
+                  placeholder="نام الگو (مثلاً: وسایل سفر)"
+                  className="min-h-[40px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3 text-xs text-[var(--text-primary)]"
+                />
+                <input
+                  type="text"
+                  value={newTplTitle}
+                  onChange={(e) => setNewTplTitle(e.target.value)}
+                  placeholder="عنوان پیش‌فرض کار..."
+                  className="min-h-[40px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3 text-xs text-[var(--text-primary)]"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={newTplCat}
+                  onChange={(e) => setNewTplCat(e.target.value as MemoryCategory)}
+                  className="min-h-[40px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 text-xs text-[var(--text-primary)]"
+                >
+                  {(['work', 'errand', 'health', 'phone', 'fitness', 'anchor', 'idea'] as MemoryCategory[]).map(
+                    (c) => (
+                      <option key={c} value={c}>
+                        {CATEGORY_META[c].shortLabel}
+                      </option>
+                    )
+                  )}
+                </select>
+                <input
+                  type="time"
+                  dir="ltr"
+                  value={newTplTime}
+                  onChange={(e) => setNewTplTime(e.target.value)}
+                  className="min-h-[40px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-2.5 text-xs text-[var(--text-primary)] font-mono-tabular"
+                />
+                <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)] cursor-pointer px-1">
+                  <input
+                    type="checkbox"
+                    checked={newTplImportant}
+                    onChange={(e) => setNewTplImportant(e.target.checked)}
+                    className="accent-[var(--accent)]"
+                  />
+                  <span>مهم</span>
+                </label>
+                <button
+                  type="button"
+                  disabled={!newTplName.trim() || !newTplTitle.trim()}
+                  onClick={() => {
+                    const tpl: TaskTemplate = {
+                      id: `tpl-${Date.now()}`,
+                      name: newTplName.trim(),
+                      category: newTplCat,
+                      defaultTitle: newTplTitle.trim(),
+                      defaultTimeStr: newTplTime,
+                      preReminderMinutes: newTplTime ? 10 : 0,
+                      isImportant: newTplImportant,
+                    };
+                    onUpdateSettings({
+                      templates: [...(settings.templates || []), tpl],
+                    });
+                    setNewTplName('');
+                    setNewTplTitle('');
+                    setNewTplTime('');
+                    setNewTplImportant(false);
+                    setFeedbackMsg(`الگوی آماده «${tpl.name}» ذخیره شد.`);
+                  }}
+                  className="mr-auto min-h-[40px] px-3.5 rounded-xl bg-[var(--accent)] text-[var(--accent-on)] text-xs font-bold inline-flex items-center gap-1 disabled:opacity-45 cursor-pointer whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>ساخت الگو</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Offline Local Data Backup & Tasks Reset */}
       <section className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 sm:p-6 space-y-4">

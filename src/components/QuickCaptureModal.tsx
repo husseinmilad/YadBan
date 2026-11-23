@@ -1,19 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  BellRing,
   Calendar,
   Check,
   ChevronLeft,
   ChevronRight,
+  Flag,
+  Link2,
   Mic,
   Pin,
   Repeat,
   X,
 } from 'lucide-react';
 import { getIranDateDetails } from '../data/iranCalendarEvents';
-import { MemoryCategory, MemoryItem, TimeBlock } from '../types/memory';
+import {
+  CustomCategory,
+  MemoryCategory,
+  MemoryItem,
+  TaskTemplate,
+  TimeBlock,
+} from '../types/memory';
 import {
   addDaysToDateKey,
   CATEGORY_META,
+  formatJalaliShortLabel,
   getJalaliDayParts,
   getJalaliMonthInfo,
   getLocalDateKey,
@@ -25,6 +35,7 @@ import {
 } from '../utils/dateFa';
 import { dictatePersianText } from '../utils/nativeBridge';
 import { CategoryIcon } from './CategoryIcon';
+import { PhotoAttachmentControl } from './PhotoAttachmentControl';
 import { VoiceRecorderControl } from './VoiceRecorderControl';
 
 interface QuickCaptureModalProps {
@@ -34,6 +45,11 @@ interface QuickCaptureModalProps {
   initialItem?: MemoryItem | null;
   defaultDateKey: string;
   initialRawText?: string;
+  initialCategory?: MemoryCategory;
+  customCategories?: CustomCategory[];
+  templates?: TaskTemplate[];
+  existingItems?: MemoryItem[];
+  enablePhotoOcr?: boolean;
 }
 
 const CATEGORIES: MemoryCategory[] = [
@@ -65,7 +81,7 @@ const CATEGORY_FORM_CONFIG: Record<
   },
   work: {
     titleLabel: 'عنوان کار، جلسه یا پیگیری اداری',
-    titlePlaceholder: 'مثلاً: ارسال گزارش ماهانه یا جلسه با تیم فنی',
+    titlePlaceholder: 'مثلاً: ارسال گزارش ماهانه یا فردا ساعت ۸ جلسه با تیم فنی',
     subTypes: ['جلسه', 'کار اداری و بانکی', 'پیگیری', 'تحویل پروژه'],
   },
   fitness: {
@@ -75,17 +91,17 @@ const CATEGORY_FORM_CONFIG: Record<
   },
   phone: {
     titleLabel: 'موضوع تماس یا نام مخاطب',
-    titlePlaceholder: 'مثلاً: پیگیری نوبت تعمیرکار یا تماس با مهندس کریمی',
+    titlePlaceholder: 'مثلاً: تماس با اداره یا مهندس کریمی ۰۹۱۲...',
     subTypes: ['تماس ضروری', 'پیگیری اداری', 'شماره خدمات', 'تماس خانوادگی'],
   },
   errand: {
     titleLabel: 'فهرست خرید یا کار روزمره',
-    titlePlaceholder: 'مثلاً: خرید نان و شیر، پرداخت قبض برق',
-    subTypes: ['خرید روزانه', 'داروخانه', 'پرداخت قبض', 'پست و ارسال'],
+    titlePlaceholder: 'مثلاً: فردا ساعت ۸ قبض را پرداخت کنم',
+    subTypes: ['خرید روزانه', 'داروخانه', 'پرداخت قبض', 'آماده‌سازی سفر'],
   },
   anchor: {
     titleLabel: 'نام وسیله، رمز یا نکته‌ای که نباید فراموش شود',
-    titlePlaceholder: 'مثلاً: جای کلید یدک، طبقه پارکینگ یا رمز کیف',
+    titlePlaceholder: 'مثلاً: عینک مطالعه، کلید یدک یا طبقه پارکینگ',
     subTypes: ['جای وسایل', 'پارکینگ خودرو', 'رمز و کارت', 'مدارک'],
   },
   idea: {
@@ -102,13 +118,21 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   initialItem,
   defaultDateKey,
   initialRawText = '',
+  initialCategory,
+  customCategories = [],
+  templates = [],
+  existingItems = [],
+  enablePhotoOcr = true,
 }) => {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [category, setCategory] = useState<MemoryCategory>('work');
+  const [customCategoryId, setCustomCategoryId] = useState<string | undefined>(undefined);
   const [dateStr, setDateStr] = useState(defaultDateKey);
   const [timeStr, setTimeStr] = useState('');
   const [repeatDaily, setRepeatDaily] = useState(false);
+  const [repeatUntilDone, setRepeatUntilDone] = useState(false);
+  const [priority, setPriority] = useState<'normal' | 'important'>('normal');
   const [preReminderMinutes, setPreReminderMinutes] = useState<0 | 5 | 10 | 15>(10);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [contactName, setContactName] = useState('');
@@ -121,6 +145,10 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   const [pinnedToWidget, setPinnedToWidget] = useState(false);
   const [voiceNoteId, setVoiceNoteId] = useState<string | undefined>(undefined);
   const [voiceDurationSec, setVoiceDurationSec] = useState<number | undefined>(undefined);
+  const [photoId, setPhotoId] = useState<string | undefined>(undefined);
+  const [photoText, setPhotoText] = useState<string | undefined>(undefined);
+  const [dependsOnId, setDependsOnId] = useState<string>('');
+  const [nextStepTitle, setNextStepTitle] = useState<string>('');
   const [userTouchedCategory, setUserTouchedCategory] = useState(false);
 
   const [selectedTimePreset, setSelectedTimePreset] = useState<TimePresetId>(null);
@@ -141,11 +169,14 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
       setTitle(initialItem.title);
       setNotes(initialItem.notes || '');
       setCategory(initialItem.category);
+      setCustomCategoryId(initialItem.customCategoryId);
       const itemDate = initialItem.dateStr || defaultDateKey || todayKey;
       setDateStr(itemDate);
       setCalendarRefKey(itemDate);
       setTimeStr(initialItem.timeStr);
       setRepeatDaily(initialItem.repeatDaily);
+      setRepeatUntilDone(Boolean(initialItem.repeatUntilDone));
+      setPriority(initialItem.priority || 'normal');
       setPreReminderMinutes(initialItem.preReminderMinutes);
       setPhoneNumber(initialItem.phoneNumber || '');
       setContactName(initialItem.contactName || '');
@@ -158,17 +189,24 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
       setPinnedToWidget(initialItem.pinnedToWidget);
       setVoiceNoteId(initialItem.voiceNoteId);
       setVoiceDurationSec(initialItem.voiceDurationSec);
+      setPhotoId(initialItem.photoId);
+      setPhotoText(initialItem.photoText);
+      setDependsOnId(initialItem.dependsOnId || '');
+      setNextStepTitle(initialItem.nextStepTitle || '');
       setUserTouchedCategory(true);
       setSelectedTimePreset(null);
     } else {
       const startDate = defaultDateKey || todayKey;
       setTitle(initialRawText);
       setNotes('');
-      setCategory('work');
+      setCategory(initialCategory || 'work');
+      setCustomCategoryId(undefined);
       setDateStr(startDate);
       setCalendarRefKey(startDate);
       setTimeStr('');
       setRepeatDaily(false);
+      setRepeatUntilDone(false);
+      setPriority('normal');
       setPreReminderMinutes(10);
       setPhoneNumber('');
       setContactName('');
@@ -178,13 +216,17 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
       setMealTiming('');
       setDurationOrQty('');
       setPersonOrPlace('');
-      setPinnedToWidget(false);
+      setPinnedToWidget(initialCategory === 'anchor' || initialCategory === 'health');
       setVoiceNoteId(undefined);
       setVoiceDurationSec(undefined);
-      setUserTouchedCategory(false);
+      setPhotoId(undefined);
+      setPhotoText(undefined);
+      setDependsOnId('');
+      setNextStepTitle('');
+      setUserTouchedCategory(Boolean(initialCategory));
       setSelectedTimePreset(null);
     }
-  }, [isOpen, initialItem, defaultDateKey, initialRawText]);
+  }, [isOpen, initialItem, defaultDateKey, initialRawText, initialCategory]);
 
   const parsedPreview = useMemo(() => {
     if (!title.trim() || initialItem) return null;
@@ -192,18 +234,34 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   }, [title, defaultDateKey, initialItem]);
 
   useEffect(() => {
-    if (!parsedPreview || userTouchedCategory || initialItem) return;
-    setCategory(parsedPreview.category);
+    if (!parsedPreview || initialItem) return;
+    if (!userTouchedCategory) {
+      setCategory(parsedPreview.category);
+    }
     if (parsedPreview.phoneNumber && !phoneNumber) {
       setPhoneNumber(parsedPreview.phoneNumber);
     }
     if (parsedPreview.contactName && !contactName) {
       setContactName(parsedPreview.contactName);
     }
+    if (parsedPreview.locationHint && !locationHint) {
+      setLocationHint(parsedPreview.locationHint);
+    }
+    if (parsedPreview.nextStepTitle && !nextStepTitle) {
+      setNextStepTitle(parsedPreview.nextStepTitle);
+    }
+    if (parsedPreview.priority === 'important') {
+      setPriority('important');
+    }
     if (parsedPreview.timeStr && !timeStr) {
       setTimeStr(parsedPreview.timeStr);
     }
-    if (parsedPreview.dateStr !== dateStr && parsedPreview.detectedHints.includes('برای فردا')) {
+    if (
+      parsedPreview.dateStr &&
+      parsedPreview.dateStr !== dateStr &&
+      (parsedPreview.detectedHints.includes('فردا') ||
+        parsedPreview.detectedHints.includes('پس‌فردا'))
+    ) {
       setDateStr(parsedPreview.dateStr);
       setCalendarRefKey(parsedPreview.dateStr);
     }
@@ -225,11 +283,31 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
     return `${prefix}${parts.dayNum} ${parts.monthName} ${info.yearFa}`;
   }, [dateStr]);
 
+  const selectableDependencyTasks = useMemo(
+    () =>
+      existingItems.filter(
+        (it) => it.id !== initialItem?.id && !it.completed && it.category !== 'anchor'
+      ),
+    [existingItems, initialItem]
+  );
+
   if (!isOpen) return null;
 
   const todayKey = getLocalDateKey(new Date());
   const tomorrowKey = addDaysToDateKey(todayKey, 1);
   const afterTomorrowKey = addDaysToDateKey(todayKey, 2);
+
+  const applyTemplate = (tpl: TaskTemplate) => {
+    setCategory(tpl.category);
+    setUserTouchedCategory(true);
+    setTitle(tpl.defaultTitle);
+    if (tpl.defaultNotes) setNotes(tpl.defaultNotes);
+    if (tpl.defaultTimeStr) setTimeStr(tpl.defaultTimeStr);
+    if (tpl.subType) setSubType(tpl.subType);
+    setPreReminderMinutes(tpl.preReminderMinutes);
+    setRepeatDaily(Boolean(tpl.repeatDaily));
+    setPriority(tpl.isImportant ? 'important' : 'normal');
+  };
 
   const applyQuickTimeOffset = (minutesFromNow: number, presetId: TimePresetId) => {
     const target = new Date(Date.now() + minutesFromNow * 60000);
@@ -267,10 +345,11 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
     }
   };
 
-  const handleSelectCategory = (cat: MemoryCategory) => {
+  const handleSelectCategory = (cat: MemoryCategory, customId?: string) => {
     setCategory(cat);
+    setCustomCategoryId(customId);
     setUserTouchedCategory(true);
-    if (cat === 'health' && !initialItem) {
+    if ((cat === 'health' || cat === 'anchor') && !initialItem) {
       setPinnedToWidget(true);
     }
   };
@@ -278,13 +357,21 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedTitle = title.trim();
-    if (!trimmedTitle && !phoneNumber.trim() && !voiceNoteId) return;
+    if (!trimmedTitle && !phoneNumber.trim() && !voiceNoteId && !photoId) return;
+
+    const cleanTitle =
+      !initialItem && parsedPreview && parsedPreview.detectedHints.length > 0
+        ? parsedPreview.title
+        : trimmedTitle;
 
     const finalTitle =
+      cleanTitle ||
       trimmedTitle ||
       (phoneNumber.trim()
         ? `تماس با ${contactName.trim() || toPersianDigits(phoneNumber.trim())}`
-        : 'یادداشت صوتی آفلاین');
+        : photoId
+          ? 'تصویر و یادداشت پیوست‌شده'
+          : 'یادداشت صوتی آفلاین');
     const cleanPhone = toEnglishDigits(phoneNumber).replace(/[^\d+]/g, '');
     const timeBlock: TimeBlock = timeStr ? getTimeBlockFromTime(timeStr) : 'anytime';
 
@@ -293,10 +380,13 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         title: finalTitle,
         notes: notes.trim() || undefined,
         category,
+        customCategoryId,
         dateStr: category === 'anchor' && !timeStr ? '' : dateStr,
         timeStr,
         timeBlock,
         repeatDaily,
+        repeatUntilDone,
+        priority,
         completed: initialItem?.completed ?? false,
         completedDates: initialItem?.completedDates ?? [],
         preReminderMinutes,
@@ -311,6 +401,10 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         pinnedToWidget,
         voiceNoteId,
         voiceDurationSec,
+        photoId,
+        photoText: photoText?.trim() || undefined,
+        dependsOnId: dependsOnId || undefined,
+        nextStepTitle: nextStepTitle.trim() || undefined,
       },
       initialItem?.id
     );
@@ -344,6 +438,27 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
+          {/* Quick Templates Bar when creating */}
+          {!initialItem && templates.length > 0 && (
+            <div>
+              <span className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
+                الگوهای آماده (انتخاب سریع)
+              </span>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                {templates.map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => applyTemplate(tpl)}
+                    className="min-h-[36px] px-3 rounded-xl bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] text-xs font-semibold text-[var(--text-primary)] hover:border-[var(--accent)] whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    {tpl.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Category segmented selector */}
           <div>
             <span className="block text-xs font-semibold text-[var(--text-secondary)] mb-2">
@@ -351,12 +466,12 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             </span>
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {CATEGORIES.map((cat) => {
-                const active = category === cat;
+                const active = category === cat && !customCategoryId;
                 return (
                   <button
                     key={cat}
                     type="button"
-                    onClick={() => handleSelectCategory(cat)}
+                    onClick={() => handleSelectCategory(cat, undefined)}
                     className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] px-2.5 py-2 text-xs font-semibold border transition-all cursor-pointer whitespace-nowrap ${
                       active
                         ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
@@ -368,10 +483,28 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                   </button>
                 );
               })}
+
+              {customCategories.map((cc) => {
+                const active = customCategoryId === cc.id;
+                return (
+                  <button
+                    key={cc.id}
+                    type="button"
+                    onClick={() => handleSelectCategory(cc.baseCategory, cc.id)}
+                    className={`min-h-[44px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] px-2.5 py-2 text-xs font-semibold border transition-all cursor-pointer whitespace-nowrap ${
+                      active
+                        ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
+                        : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:bg-[var(--bg-surface-tonal)]'
+                    }`}
+                  >
+                    <span className="truncate">{cc.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Primary input + Speech-to-Text ("تایپ با ضبط") */}
+          {/* Primary input + Speech-to-Text */}
           <div>
             <div className="flex items-center justify-between gap-2 mb-2">
               <label
@@ -387,7 +520,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                 disabled={isDictating}
                 className={`min-h-[34px] inline-flex items-center gap-1.5 rounded-xl px-3 text-xs font-bold border transition-all cursor-pointer ${
                   isDictating
-                    ? 'bg-rose-600 text-white border-rose-600 animate-pulse'
+                    ? 'bg-rose-600 text-white border-rose-600'
                     : 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)] border-[var(--accent)]/30 hover:opacity-90'
                 }`}
               >
@@ -412,10 +545,27 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               </p>
             )}
 
+            {/* Short Live Preview of Natural Language Parsing before Save */}
             {parsedPreview && parsedPreview.detectedHints.length > 0 && (
-              <p className="mt-2 text-xs text-[var(--accent)] font-medium">
-                تشخیص هوشمند: {parsedPreview.detectedHints.join(' · ')}
-              </p>
+              <div className="mt-2.5 rounded-xl bg-[var(--accent-soft)]/70 border border-[var(--accent)]/25 px-3.5 py-2.5 text-xs space-y-1">
+                <p className="font-bold text-[var(--accent-soft-text)]">
+                  پیشنمایش تشخیص زبان طبیعی:
+                </p>
+                <p className="text-[var(--text-primary)]">
+                  <span>عنوان: </span>
+                  <strong>{parsedPreview.title}</strong>
+                  <span aria-hidden="true"> · </span>
+                  <span>{formatJalaliShortLabel(parsedPreview.dateStr)}</span>
+                  {parsedPreview.timeStr && (
+                    <>
+                      <span aria-hidden="true"> · </span>
+                      <span className="font-mono-tabular font-bold">
+                        ساعت {toPersianDigits(parsedPreview.timeStr)}
+                      </span>
+                    </>
+                  )}
+                </p>
+              </div>
             )}
           </div>
 
@@ -434,7 +584,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                         : category === 'errand'
                           ? 'نوع کار یا خرید'
                           : category === 'anchor'
-                            ? 'نوع لنگر حافظه'
+                            ? 'نوع وسیله یا مکان'
                             : 'برچسب یادداشت'}
               </span>
               <div className="flex flex-wrap gap-1.5">
@@ -492,7 +642,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
-                      پزشک، داروخانه یا مرکز درمانی (اختیاری)
+                      پزشک یا داروخانه (اختیاری)
                     </label>
                     <input
                       type="text"
@@ -566,13 +716,13 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             {category === 'anchor' && (
               <div>
                 <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
-                  نشانی دقیق یا محل قرارگیری شیء
+                  نشانی دقیق یا محل قرارگیری شیء (دفترچه «کجا گذاشتم؟»)
                 </label>
                 <input
                   type="text"
                   value={locationHint}
                   onChange={(e) => setLocationHint(e.target.value)}
-                  placeholder="مثلاً: پارکینگ منفی ۱، روبه‌روی آسانسور یا کشوی سمت چپ میز"
+                  placeholder="مثلاً: کشوی اول میز، جاکفشی طبقه دوم یا پارکینگ B4"
                   className="w-full min-h-[42px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3.5 text-sm text-[var(--text-primary)]"
                 />
               </div>
@@ -768,7 +918,6 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               </div>
             </div>
 
-            {/* Inline Jalali Calendar Popover */}
             {showJalaliCalendar && (
               <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] p-3.5 space-y-3">
                 <div className="flex items-center justify-between">
@@ -841,39 +990,65 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             )}
           </div>
 
-          {/* Repeat & Pin options */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* Priority, Repeat, Repeat-until-done, Pin options */}
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setRepeatDaily((v) => !v)}
-              className={`min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
-                repeatDaily
-                  ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
+              onClick={() => setPriority((p) => (p === 'important' ? 'normal' : 'important'))}
+              className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
+                priority === 'important'
+                  ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
                   : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
               }`}
             >
-              <Repeat className="w-4 h-4" />
-              <span>{repeatDaily ? 'تکرار روزانه فعال است' : 'تکرار روزانه'}</span>
+              <Flag className="w-3.5 h-3.5" />
+              <span>{priority === 'important' ? 'کار مهم است' : 'اولویت مهم'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRepeatUntilDone((v) => !v)}
+              className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
+                repeatUntilDone
+                  ? 'bg-[var(--sem-warning-soft)] text-[var(--sem-warning)] border-[var(--sem-warning)]/40'
+                  : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
+              }`}
+            >
+              <BellRing className="w-3.5 h-3.5" />
+              <span>{repeatUntilDone ? 'تکرار تا زمان انجام' : 'پیگیری تا انجام'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRepeatDaily((v) => !v)}
+              className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
+                repeatDaily
+                  ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
+                  : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
+              }`}
+            >
+              <Repeat className="w-3.5 h-3.5" />
+              <span>{repeatDaily ? 'تکرار روزانه فعال' : 'تکرار روزانه'}</span>
             </button>
 
             <button
               type="button"
               onClick={() => setPinnedToWidget((v) => !v)}
-              className={`min-h-[44px] flex items-center justify-center gap-2 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
+              className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
                 pinnedToWidget
-                  ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
+                  ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
                   : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
               }`}
             >
-              <Pin className="w-4 h-4" />
-              <span>{pinnedToWidget ? 'سنجاق به ویجت فعال است' : 'سنجاق به ویجت'}</span>
+              <Pin className="w-3.5 h-3.5" />
+              <span>{pinnedToWidget ? 'سنجاق به ویجت فعال' : 'سنجاق به ویجت'}</span>
             </button>
           </div>
 
           {timeStr && (
             <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)]/60 border border-[var(--border-subtle)] p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                پیش‌هشدار هوشمند قبل از موعد:
+                پیش‌هشدار مرحله‌ای قبل از موعد:
               </span>
               <div className="flex flex-wrap items-center gap-1.5">
                 {([0, 5, 10, 15] as const).map((mins) => {
@@ -897,15 +1072,68 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             </div>
           )}
 
-          {/* Offline Voice Memo Attachment */}
-          <VoiceRecorderControl
-            voiceNoteId={voiceNoteId}
-            voiceDurationSec={voiceDurationSec}
-            onChange={(id, dur) => {
-              setVoiceNoteId(id);
-              setVoiceDurationSec(dur);
-            }}
-          />
+          {/* Chained / Dependent Reminders */}
+          <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)]/60 border border-[var(--border-subtle)] p-3.5 space-y-3">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-primary)]">
+              <Link2 className="w-4 h-4 text-[var(--accent)]" />
+              <span>یادآور وابسته و مرحله بعدی (اختیاری)</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
+                  فعال شدن پس از انجام کار دیگر:
+                </label>
+                <select
+                  value={dependsOnId}
+                  onChange={(e) => setDependsOnId(e.target.value)}
+                  className="w-full min-h-[40px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3 text-xs text-[var(--text-primary)]"
+                >
+                  <option value="">بدون وابستگی به کار قبلی</option>
+                  {selectableDependencyTasks.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      بعد از: {t.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-[var(--text-muted)] mb-1">
+                  مرحله بعدی پس از انجام این کار:
+                </label>
+                <input
+                  type="text"
+                  value={nextStepTitle}
+                  onChange={(e) => setNextStepTitle(e.target.value)}
+                  placeholder="مثلاً: ثبت نتیجه تماس یا ارسال رسید"
+                  className="w-full min-h-[40px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3 text-xs text-[var(--text-primary)]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Offline Voice Memo + Photo with Searchable Text */}
+          <div className="space-y-3">
+            <VoiceRecorderControl
+              voiceNoteId={voiceNoteId}
+              voiceDurationSec={voiceDurationSec}
+              onChange={(id, dur) => {
+                setVoiceNoteId(id);
+                setVoiceDurationSec(dur);
+              }}
+            />
+
+            <PhotoAttachmentControl
+              photoId={photoId}
+              photoText={photoText}
+              enableOcrByDefault={enablePhotoOcr}
+              onChange={(id, txt) => {
+                setPhotoId(id);
+                setPhotoText(txt);
+              }}
+            />
+          </div>
 
           {/* Optional extra details */}
           <div>

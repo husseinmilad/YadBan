@@ -9,6 +9,7 @@ public class YadbanActionReceiver extends BroadcastReceiver {
 
     public static final String ACTION_COMPLETE = "ir.yadban.app.ACTION_COMPLETE";
     public static final String ACTION_SNOOZE_10 = "ir.yadban.app.ACTION_SNOOZE_10";
+    public static final String ACTION_SNOOZE_60 = "ir.yadban.app.ACTION_SNOOZE_60";
     public static final String ACTION_WIDGET_TOGGLE_TASK = "ir.yadban.app.ACTION_WIDGET_TOGGLE_TASK";
 
     @Override
@@ -26,6 +27,8 @@ public class YadbanActionReceiver extends BroadcastReceiver {
             db.toggleOrCompleteItem(context, itemId, true);
         } else if (ACTION_SNOOZE_10.equals(action)) {
             db.snoozeItem(context, itemId, 10);
+        } else if (ACTION_SNOOZE_60.equals(action)) {
+            db.snoozeItem(context, itemId, 60);
         }
 
         if (notifId != -1) {

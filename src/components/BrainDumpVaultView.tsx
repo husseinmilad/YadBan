@@ -1,9 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import {
   CalendarPlus,
+  Camera,
   Check,
   Copy,
   Edit3,
+  Layers,
+  Link2,
   MapPin,
   Phone,
   Pin,
@@ -11,25 +14,30 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { MemoryItem } from '../types/memory';
+import { MemoryCategory, MemoryItem } from '../types/memory';
 import { CATEGORY_META, getLocalDateKey, toPersianDigits } from '../utils/dateFa';
 import { CategoryIcon } from './CategoryIcon';
+import { PhotoThumbnail } from './PhotoThumbnail';
 import { VoiceNotePlayer } from './VoiceNotePlayer';
 
 interface BrainDumpVaultViewProps {
   items: MemoryItem[];
-  onOpenModalForNew: () => void;
+  onOpenModalForNew: (prefillText?: string, category?: MemoryCategory) => void;
+  onOpenBrainDump: () => void;
+  onQuickSaveObjectLocation: (objectName: string, locationHint: string) => void;
   onEditItem: (item: MemoryItem) => void;
   onDeleteItem: (id: string) => void;
   onTogglePin: (id: string) => void;
   onScheduleToday: (id: string) => void;
 }
 
-type VaultFilter = 'all' | 'phone' | 'anchor' | 'idea';
+type VaultFilter = 'all' | 'anchor' | 'phone' | 'idea';
 
 export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
   items,
   onOpenModalForNew,
+  onOpenBrainDump,
+  onQuickSaveObjectLocation,
   onEditItem,
   onDeleteItem,
   onTogglePin,
@@ -38,6 +46,8 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<VaultFilter>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [objName, setObjName] = useState('');
+  const [objPlace, setObjPlace] = useState('');
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -50,6 +60,7 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
         return (
           item.title.toLowerCase().includes(q) ||
           (item.notes || '').toLowerCase().includes(q) ||
+          (item.photoText || '').toLowerCase().includes(q) ||
           (item.phoneNumber || '').includes(q) ||
           (item.contactName || '').toLowerCase().includes(q) ||
           (item.locationHint || '').toLowerCase().includes(q) ||
@@ -70,32 +81,51 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
     setTimeout(() => setCopiedId(null), 1600);
   };
 
+  const handleQuickLocationSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!objName.trim() || !objPlace.trim()) return;
+    onQuickSaveObjectLocation(objName.trim(), objPlace.trim());
+    setObjName('');
+    setObjPlace('');
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header + Search */}
       <section className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 sm:p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-extrabold text-[var(--text-primary)]">
-              صندوق ذهن و شماره‌های فوری
+              صندوق ذهن و دفترچهٔ «کجا گذاشتم؟»
             </h1>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              تمامی شماره‌ها، محل قرارگیری وسایل و ایده‌هایی که برای جلوگیری از فراموشی ثبت کرده‌اید
+            <p className="mt-1 text-xs sm:text-sm text-[var(--text-secondary)]">
+              جست‌وجوی سریع مکان اشیا، شماره‌های ضروری، عکس برگه‌ها و ایده‌های ثبت‌شده
               <span className="mx-1.5" aria-hidden="true">·</span>
-              <span className="tabular-nums">{toPersianDigits(phoneCount)} شماره</span>
+              <span className="tabular-nums">{toPersianDigits(anchorCount)} محل وسیله</span>
               <span className="mx-1.5" aria-hidden="true">·</span>
-              <span className="tabular-nums">{toPersianDigits(anchorCount)} لنگر حافظه</span>
+              <span className="tabular-nums">{toPersianDigits(phoneCount)} شماره تماس</span>
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onOpenModalForNew}
-            className="min-h-[48px] inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--accent)] px-5 text-sm font-semibold text-[var(--accent-on)] cursor-pointer whitespace-nowrap shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>ثبت مورد جدید</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onOpenBrainDump}
+              className="min-h-[46px] inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--accent-soft)] text-[var(--accent-soft-text)] px-4 text-xs sm:text-sm font-bold hover:opacity-90 cursor-pointer whitespace-nowrap"
+            >
+              <Layers className="w-4 h-4" />
+              <span>ذهن‌خالی‌کن (چندخطی)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onOpenModalForNew('', filter === 'anchor' ? 'anchor' : undefined)}
+              className="min-h-[46px] inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--accent)] px-5 text-xs sm:text-sm font-semibold text-[var(--accent-on)] cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              <span>ثبت مورد جدید</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
@@ -105,7 +135,7 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="جستجو در شماره‌ها، کلید، پارکینگ، یادداشت‌ها و برنامه‌ها..."
+              placeholder="جست‌وجوی فوری: عینک، کلید، شماره تلفن، برگه، دارو..."
               className="w-full min-h-[46px] rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] pr-10 pl-4 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
             />
           </div>
@@ -114,8 +144,8 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
             {(
               [
                 { id: 'all', label: 'همه موارد' },
+                { id: 'anchor', label: 'کجا گذاشتم؟' },
                 { id: 'phone', label: 'شماره تلفن‌ها' },
-                { id: 'anchor', label: 'لنگرهای حافظه' },
                 { id: 'idea', label: 'یادداشت‌های آزاد' },
               ] as const
             ).map((tab) => (
@@ -134,6 +164,54 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Dedicated Quick "Where Did I Put It?" Notebook Bar */}
+        {filter === 'anchor' && (
+          <form
+            onSubmit={handleQuickLocationSubmit}
+            className="pt-3 border-t border-[var(--border-subtle)] flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 animate-task-enter"
+          >
+            <input
+              type="text"
+              value={objName}
+              onChange={(e) => setObjName(e.target.value)}
+              placeholder="نام وسیله (مثلاً: عینک مطالعه، دسته کلید زاپاس، پاسپورت)"
+              className="flex-1 min-h-[44px] rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] px-3.5 text-xs sm:text-sm text-[var(--text-primary)]"
+            />
+            <input
+              type="text"
+              value={objPlace}
+              onChange={(e) => setObjPlace(e.target.value)}
+              placeholder="کجا گذاشتید؟ (مثلاً: کشوی اول میز، داخل کیف مشکی)"
+              className="flex-1 min-h-[44px] rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] px-3.5 text-xs sm:text-sm text-[var(--text-primary)]"
+            />
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="submit"
+                disabled={!objName.trim() || !objPlace.trim()}
+                className="min-h-[44px] px-4 rounded-[var(--radius-control)] bg-[var(--accent)] text-[var(--accent-on)] text-xs font-bold disabled:opacity-45 cursor-pointer whitespace-nowrap"
+              >
+                ثبت در دفترچه
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenModalForNew(
+                    objName.trim()
+                      ? `${objName.trim()}${objPlace.trim() ? ` — ${objPlace.trim()}` : ''}`
+                      : '',
+                    'anchor'
+                  )
+                }
+                className="min-h-[44px] px-3 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-surface-tonal)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                title="ثبت مکان وسیله همراه با عکس"
+              >
+                <Camera className="w-4 h-4 text-[var(--accent)]" />
+                <span>با عکس</span>
+              </button>
+            </div>
+          </form>
+        )}
       </section>
 
       {/* Grid of Memory Cards */}
@@ -141,7 +219,7 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
         <div className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-10 text-center">
           <p className="text-base font-bold text-[var(--text-primary)]">موردی یافت نشد</p>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
-            عبارت جستجو را تغییر دهید یا یک شماره تلفن یا یادداشت جدید اضافه کنید.
+            عبارت جست‌وجو را تغییر دهید یا با «ذهن‌خالی‌کن» و «ثبت مورد جدید» موارد تازه اضافه کنید.
           </p>
         </div>
       ) : (
@@ -149,17 +227,28 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
           {filtered.map((item) => {
             const cat = CATEGORY_META[item.category];
             const isToday = item.dateStr === getLocalDateKey(new Date());
+            const metaLine = [
+              item.subType,
+              item.dosage ? `مقدار: ${item.dosage}` : undefined,
+              item.mealTiming,
+              item.durationOrQty,
+              item.personOrPlace,
+            ]
+              .filter(Boolean)
+              .join(' · ');
 
             return (
               <article
                 key={item.id}
-                className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 flex flex-col justify-between gap-4"
+                className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 flex flex-col justify-between gap-4 animate-task-enter"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
                     <div className="flex items-center gap-1.5">
-                      <CategoryIcon category={item.category} className={`w-4 h-4 ${cat.colorClass}`} />
-                      <span className={`font-semibold ${cat.colorClass}`}>{cat.shortLabel}</span>
+                      <CategoryIcon category={item.category} className="w-4 h-4 text-[var(--accent)]" />
+                      <span className="font-semibold text-[var(--text-secondary)]">
+                        {item.category === 'anchor' ? 'کجا گذاشتم؟' : cat.shortLabel}
+                      </span>
                       {item.timeStr && (
                         <>
                           <span aria-hidden="true">·</span>
@@ -200,7 +289,7 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
                           aria-label="کپی شماره تلفن"
                         >
                           {copiedId === item.id ? (
-                            <Check className="w-4 h-4 text-emerald-600" />
+                            <Check className="w-4 h-4 text-[var(--sem-done)]" />
                           ) : (
                             <Copy className="w-4 h-4" />
                           )}
@@ -216,33 +305,12 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
                     </div>
                   )}
 
-                  {(item.subType ||
-                    item.dosage ||
-                    item.mealTiming ||
-                    item.durationOrQty ||
-                    item.personOrPlace) && (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      {[
-                        item.subType,
-                        item.dosage ? `مقدار: ${item.dosage}` : undefined,
-                        item.mealTiming,
-                        item.durationOrQty,
-                        item.personOrPlace,
-                      ]
-                        .filter(Boolean)
-                        .map((metaText) => (
-                          <span
-                            key={metaText}
-                            className="inline-flex items-center rounded-lg bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]"
-                          >
-                            {metaText}
-                          </span>
-                        ))}
-                    </div>
+                  {metaLine && (
+                    <p className="mt-2 text-xs text-[var(--text-secondary)]">{metaLine}</p>
                   )}
 
                   {item.locationHint && (
-                    <div className="mt-2.5 flex items-center gap-2 text-sm text-[var(--accent)] font-medium">
+                    <div className="mt-2.5 flex items-center gap-2 text-sm text-[var(--accent)] font-semibold">
                       <MapPin className="w-4 h-4 shrink-0" />
                       <span>{item.locationHint}</span>
                     </div>
@@ -252,6 +320,17 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
                     <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
                       {item.notes}
                     </p>
+                  )}
+
+                  {item.nextStepTitle && (
+                    <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                      <Link2 className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
+                      <span>مرحله بعد: {item.nextStepTitle}</span>
+                    </p>
+                  )}
+
+                  {item.photoId && (
+                    <PhotoThumbnail photoId={item.photoId} photoText={item.photoText} />
                   )}
 
                   {item.voiceNoteId && (
@@ -275,7 +354,7 @@ export const BrainDumpVaultView: React.FC<BrainDumpVaultViewProps> = ({
                     <button
                       type="button"
                       onClick={() => onDeleteItem(item.id)}
-                      className="min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                      className="min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center text-[var(--sem-danger)] hover:bg-rose-500/10 cursor-pointer"
                       aria-label="حذف"
                     >
                       <Trash2 className="w-4 h-4" />

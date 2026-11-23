@@ -169,9 +169,8 @@ public class YadbanWidgetUpdater {
             }
         }
 
-        Intent textIntent = new Intent(context, MainActivity.class);
+        Intent textIntent = new Intent(context, YadbanQuickCaptureActivity.class);
         textIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        textIntent.putExtra("yadban_action", "quick-add");
         PendingIntent textPi = PendingIntent.getActivity(
             context,
             2001,
