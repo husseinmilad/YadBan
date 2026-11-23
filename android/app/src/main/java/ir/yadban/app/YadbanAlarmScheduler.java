@@ -18,8 +18,10 @@ import androidx.core.app.NotificationCompat;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 
 public class YadbanAlarmScheduler {
@@ -63,11 +65,15 @@ public class YadbanAlarmScheduler {
 
         boolean autoRepeatNudge = true;
         int nudgeIntervalMin = 10;
+        boolean tomorrowDigestEnabled = true;
+        String tomorrowDigestTime = "21:00";
         if (settingsJson != null) {
             try {
                 JSONObject sObj = new JSONObject(settingsJson);
                 autoRepeatNudge = sObj.optBoolean("autoRepeatNudge", true);
                 nudgeIntervalMin = Math.max(5, sObj.optInt("nudgeIntervalMin", 10));
+                tomorrowDigestEnabled = sObj.optBoolean("tomorrowDigestEnabled", true);
+                tomorrowDigestTime = sObj.optString("tomorrowDigestTime", "21:00");
             } catch (Exception ignored) {
             }
         }
@@ -76,6 +82,12 @@ public class YadbanAlarmScheduler {
         int scheduledCount = 0;
         long now = System.currentTimeMillis();
         String todayKey = YadbanOfflineDb.getTodayDateKey();
+        Calendar tomorrowCal = Calendar.getInstance();
+        tomorrowCal.add(Calendar.DAY_OF_MONTH, 1);
+        String tomorrowKey = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(tomorrowCal.getTime());
+        int tomorrowCount = 0;
+        StringBuilder tomorrowPreview = new StringBuilder();
+        int tomorrowPreviewItems = 0;
 
         try {
             JSONArray arr = new JSONArray(itemsJson);
@@ -103,6 +115,20 @@ public class YadbanAlarmScheduler {
                     }
                 } else {
                     isDone = item.optBoolean("completed", false);
+                }
+
+                if ((repeatDaily || tomorrowKey.equals(dateStr)) && !item.optBoolean("completed", false)) {
+                    tomorrowCount++;
+                    if (tomorrowPreviewItems < 3) {
+                        if (tomorrowPreview.length() > 0) {
+                            tomorrowPreview.append(" · ");
+                        }
+                        if (!timeStr.isEmpty()) {
+                            tomorrowPreview.append(timeStr).append(" ");
+                        }
+                        tomorrowPreview.append(title);
+                        tomorrowPreviewItems++;
+                    }
                 }
 
                 if (snoozedUntil > now + 2000L && !isDone) {
@@ -223,6 +249,38 @@ public class YadbanAlarmScheduler {
                     }
                 }
             }
+
+            if (tomorrowDigestEnabled && tomorrowDigestTime != null && tomorrowDigestTime.contains(":")) {
+                String[] dParts = tomorrowDigestTime.split(":");
+                if (dParts.length >= 2) {
+                    int dh = Integer.parseInt(dParts[0]);
+                    int dm = Integer.parseInt(dParts[1]);
+                    Calendar dCal = Calendar.getInstance();
+                    dCal.set(Calendar.HOUR_OF_DAY, dh);
+                    dCal.set(Calendar.MINUTE, dm);
+                    dCal.set(Calendar.SECOND, 0);
+                    dCal.set(Calendar.MILLISECOND, 0);
+                    if (dCal.getTimeInMillis() <= now + 2000L) {
+                        dCal.add(Calendar.DAY_OF_MONTH, 1);
+                    }
+                    String digestBody = tomorrowCount > 0
+                        ? "تعداد " + tomorrowCount + " برنامه برای فردا: " + tomorrowPreview
+                        : "برای فردا هنوز برنامه‌ای ثبت نشده است.";
+                    int digestCode = "yadban-tomorrow-digest".hashCode();
+                    scheduleSingleAlarm(
+                        context,
+                        am,
+                        digestCode,
+                        dCal.getTimeInMillis(),
+                        "tomorrow-digest",
+                        "برنامه‌های فردای شما در یادبان",
+                        digestBody,
+                        false
+                    );
+                    newCodes.add(String.valueOf(digestCode));
+                    scheduledCount++;
+                }
+            }
         } catch (Exception ignored) {
         }
 
@@ -324,7 +382,7 @@ public class YadbanAlarmScheduler {
             .setContentIntent(contentPi)
             .setDefaults(NotificationCompat.DEFAULT_ALL);
 
-        if (itemId != null && !itemId.isEmpty() && !"test".equals(itemId)) {
+        if (itemId != null && !itemId.isEmpty() && !"test".equals(itemId) && !"tomorrow-digest".equals(itemId)) {
             Intent doneIntent = new Intent(context, YadbanActionReceiver.class);
             doneIntent.setAction(YadbanActionReceiver.ACTION_COMPLETE);
             doneIntent.putExtra("itemId", itemId);

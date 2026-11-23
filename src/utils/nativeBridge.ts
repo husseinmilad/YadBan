@@ -48,6 +48,14 @@ interface YadbanNativePluginInterface {
     fileName: string;
     jsonContent: string;
   }): Promise<{ ok: boolean; error?: string }>;
+  shareImageFile(options: {
+    fileName: string;
+    base64Png: string;
+  }): Promise<{ ok: boolean; error?: string }>;
+  exportImageFile(options: {
+    fileName: string;
+    base64Png: string;
+  }): Promise<{ ok: boolean; cancelled?: boolean; method?: string; error?: string }>;
 }
 
 const YadbanNative = registerPlugin<YadbanNativePluginInterface>('YadbanNative');
@@ -56,7 +64,7 @@ export function isNativeAndroidApp(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
 }
 
-export function buildWidgetPayload(items: MemoryItem[]): string {
+export function buildWidgetPayload(items: MemoryItem[], settings?: UserSettings): string {
   const todayKey = getLocalDateKey(new Date());
   const todayItems = items
     .filter((i) => i.repeatDaily || i.dateStr === todayKey)
@@ -79,6 +87,7 @@ export function buildWidgetPayload(items: MemoryItem[]): string {
   return JSON.stringify({
     dateKey: todayKey,
     jalaliLabel: getJalaliFullDate(new Date()),
+    widgetTheme: settings?.nativeWidgetTheme || 'ocean',
     totalCount: todayItems.length,
     doneCount,
     nextTitle: nextPending ? nextPending.title : 'همه کارهای امروز انجام شد',
@@ -119,7 +128,7 @@ export async function syncOfflineStateAndAlarms(
   try {
     const itemsJson = JSON.stringify(items);
     const settingsJson = JSON.stringify(settings);
-    const widgetPayloadJson = buildWidgetPayload(items);
+    const widgetPayloadJson = buildWidgetPayload(items, settings);
 
     await YadbanNative.saveOfflineSnapshot({
       itemsJson,
@@ -133,11 +142,14 @@ export async function syncOfflineStateAndAlarms(
   }
 }
 
-export async function refreshNativeHomeWidgets(items: MemoryItem[]): Promise<boolean> {
+export async function refreshNativeHomeWidgets(
+  items: MemoryItem[],
+  settings?: UserSettings
+): Promise<boolean> {
   if (!isNativeAndroidApp()) return false;
   try {
     await YadbanNative.refreshWidgets({
-      widgetPayloadJson: buildWidgetPayload(items),
+      widgetPayloadJson: buildWidgetPayload(items, settings),
     });
     return true;
   } catch {
@@ -481,4 +493,67 @@ export async function shareYadbanBackup(
     }
   }
   return { ok: false, error: 'اشتراک‌گذاری مستقیم در این مرورگر در دسترس نیست.' };
+}
+
+export async function shareYadbanImage(options: {
+  fileName: string;
+  blob: Blob;
+  base64Png: string;
+  title?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { fileName, blob, base64Png, title = 'برنامه هفتگی یادبان' } = options;
+  if (isNativeAndroidApp()) {
+    try {
+      return await YadbanNative.shareImageFile({ fileName, base64Png });
+    } catch {
+      return { ok: false, error: 'خطا در اشتراک‌گذاری تصویر برنامه هفتگی.' };
+    }
+  }
+
+  if (typeof navigator !== 'undefined' && 'share' in navigator) {
+    try {
+      const file = new File([blob], fileName, { type: 'image/png' });
+      const navWithShare = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+      };
+      if (navWithShare.canShare?.({ files: [file] })) {
+        await navigator.share({ title, files: [file] });
+        return { ok: true };
+      }
+    } catch {
+      return { ok: false, error: 'اشتراک‌گذاری تصویر لغو شد یا پشتیبانی نمی‌شود.' };
+    }
+  }
+  return { ok: false, error: 'اشتراک‌گذاری مستقیم فایل تصویر در این مرورگر در دسترس نیست؛ می‌توانید تصویر را دانلود کنید.' };
+}
+
+export async function exportYadbanImage(options: {
+  fileName: string;
+  dataUrl: string;
+  base64Png: string;
+}): Promise<{ ok: boolean; cancelled?: boolean; method?: string; error?: string }> {
+  const { fileName, dataUrl, base64Png } = options;
+  if (isNativeAndroidApp()) {
+    try {
+      return await YadbanNative.exportImageFile({ fileName, base64Png });
+    } catch {
+      return { ok: false, error: 'خطا در ذخیره تصویر در حافظه گوشی.' };
+    }
+  }
+
+  try {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = fileName;
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (a.parentNode) a.parentNode.removeChild(a);
+    }, 1000);
+    return { ok: true, method: 'browser_download' };
+  } catch {
+    return { ok: false, error: 'مرورگر اجازه دانلود تصویر را نداد.' };
+  }
 }

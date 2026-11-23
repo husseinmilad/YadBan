@@ -1,24 +1,32 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  BellOff,
   BellRing,
   Calendar,
   CalendarClock,
+  CalendarDays,
   Check,
   Clock,
+  Download,
   Edit3,
   Eye,
   Flag,
   Link2,
+  Loader2,
   Mic,
   Phone,
   Pin,
   Plus,
   Repeat,
+  ScanText,
   Send,
+  Share2,
   Sparkles,
   Sun,
+  Timer,
   Trash2,
+  X,
 } from 'lucide-react';
 import { getIranDateDetails } from '../data/iranCalendarEvents';
 import {
@@ -38,7 +46,15 @@ import {
   TIME_BLOCK_LABELS,
   toPersianDigits,
 } from '../utils/dateFa';
-import { dictatePersianText } from '../utils/nativeBridge';
+import {
+  dictatePersianText,
+  exportYadbanImage,
+  shareYadbanImage,
+} from '../utils/nativeBridge';
+import {
+  GeneratedWeeklyImage,
+  generateWeeklyScheduleImage,
+} from '../utils/weeklyImageShare';
 import { CategoryIcon } from './CategoryIcon';
 import { MonthlyCalendarWidget } from './MonthlyCalendarWidget';
 import { PhotoThumbnail } from './PhotoThumbnail';
@@ -52,10 +68,15 @@ interface TodayPlannerViewProps {
   onSelectDateKey: (dateKey: string) => void;
   onToggleComplete: (id: string, dateKey: string) => void;
   onQuickAdd: (rawText: string) => void;
-  onOpenModalForNew: (prefillText?: string, category?: MemoryCategory) => void;
+  onOpenModalForNew: (
+    prefillText?: string,
+    category?: MemoryCategory,
+    targetDateKey?: string
+  ) => void;
   onEditItem: (item: MemoryItem) => void;
   onDeleteItem: (id: string) => void;
   onSnoozeItem: (id: string, mins: number) => void;
+  onCancelSchedule: (id: string) => void;
   onOpenFocusMode: (startItemId?: string) => void;
   onOpenDailyReview: () => void;
   onGoToSettings: () => void;
@@ -71,6 +92,55 @@ function getGreetingByHour(): string {
   return 'شب بخیر';
 }
 
+function getTargetTimestampMs(item: MemoryItem, dateKey: string): number | null {
+  if (item.snoozedUntil && item.snoozedUntil > 0) {
+    return item.snoozedUntil;
+  }
+  if (!item.timeStr || !item.timeStr.includes(':')) return null;
+  const [hh, mm] = item.timeStr.split(':').map(Number);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+  const effectiveKey = item.repeatDaily
+    ? getLocalDateKey(new Date())
+    : item.dateStr || dateKey;
+  const [y, m, d] = effectiveKey.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d, hh, mm, 0, 0).getTime();
+}
+
+function formatCountdownClock(diffMs: number): {
+  clock: string;
+  humanLabel: string;
+  isOverdue: boolean;
+} {
+  if (diffMs <= 0) {
+    const passedMin = Math.max(1, Math.floor(Math.abs(diffMs) / 60000));
+    return {
+      clock: '۰۰:۰۰:۰۰',
+      humanLabel:
+        passedMin >= 60
+          ? `${toPersianDigits(Math.floor(passedMin / 60))} ساعت و ${toPersianDigits(passedMin % 60)} دقیقه گذشته`
+          : `${toPersianDigits(passedMin)} دقیقه از موعد گذشته`,
+      isOverdue: true,
+    };
+  }
+  const totalSec = Math.floor(diffMs / 1000);
+  const hrs = Math.floor(totalSec / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  const clock = toPersianDigits(
+    `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  );
+  let humanLabel = '';
+  if (hrs > 0) {
+    humanLabel = `${toPersianDigits(hrs)} ساعت و ${toPersianDigits(mins)} دقیقه تا کار بعدی`;
+  } else if (mins > 0) {
+    humanLabel = `${toPersianDigits(mins)} دقیقه تا کار بعدی`;
+  } else {
+    humanLabel = `${toPersianDigits(secs)} ثانیه تا کار بعدی`;
+  }
+  return { clock, humanLabel, isOverdue: false };
+}
+
 export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
   items,
   settings,
@@ -83,6 +153,7 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
   onEditItem,
   onDeleteItem,
   onSnoozeItem,
+  onCancelSchedule,
   onOpenFocusMode,
   onOpenDailyReview,
   onGoToSettings,
@@ -94,10 +165,22 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
   const [timeFilter, setTimeFilter] = useState<TimeBlock | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<MemoryCategory | 'all'>('all');
   const [recentlyPoppedId, setRecentlyPoppedId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [weeklyImage, setWeeklyImage] = useState<GeneratedWeeklyImage | null>(null);
+  const [generatingWeeklyImg, setGeneratingWeeklyImg] = useState(false);
+  const [weeklyShareStatus, setWeeklyShareStatus] = useState('');
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const todayKey = getLocalDateKey(new Date());
   const isViewingToday = selectedDateKey === todayKey;
   const weekDays = useMemo(() => get7DayWindow(selectedDateKey), [selectedDateKey]);
+  const currentWeekDays = useMemo(() => get7DayWindow(todayKey), [todayKey]);
 
   const itemById = useMemo(() => {
     const map = new Map<string, MemoryItem>();
@@ -148,12 +231,30 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
       return !done;
     });
     if (pending.length === 0) return null;
-    // Prefer timed tasks first, then important tasks
-    const timed = pending.find((i) => Boolean(i.timeStr));
-    if (timed) return timed;
+
+    // Prefer next upcoming scheduled/snoozed task first, then earliest timed, then important
+    const withTs = pending
+      .map((item) => ({ item, ts: getTargetTimestampMs(item, selectedDateKey) }))
+      .filter((x): x is { item: MemoryItem; ts: number } => x.ts !== null);
+
+    if (withTs.length > 0) {
+      const upcoming = withTs
+        .filter((x) => x.ts >= nowMs - 60000)
+        .sort((a, b) => a.ts - b.ts);
+      if (upcoming.length > 0) return upcoming[0].item;
+      return withTs.sort((a, b) => a.ts - b.ts)[0].item;
+    }
+
     const important = pending.find((i) => i.priority === 'important');
     return important || pending[0];
-  }, [dateItems, selectedDateKey]);
+  }, [dateItems, selectedDateKey, nowMs]);
+
+  const nextTaskCountdown = useMemo(() => {
+    if (!nextTask) return null;
+    const ts = getTargetTimestampMs(nextTask, selectedDateKey);
+    if (ts === null) return null;
+    return formatCountdownClock(ts - nowMs);
+  }, [nextTask, selectedDateKey, nowMs]);
 
   // Grouped agenda list with gentle time-of-day separation
   const timeGroupedSections = useMemo(() => {
@@ -226,6 +327,56 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
     setRecentlyPoppedId(id);
     setTimeout(() => setRecentlyPoppedId((cur) => (cur === id ? null : cur)), 240);
     onToggleComplete(id, selectedDateKey);
+  };
+
+  const handleOpenWeeklyImageShare = async () => {
+    if (generatingWeeklyImg) return;
+    setGeneratingWeeklyImg(true);
+    setWeeklyShareStatus('');
+    try {
+      const img = await generateWeeklyScheduleImage({
+        items,
+        weekDays: currentWeekDays,
+        palette: settings.palette,
+        userName: settings.userName,
+      });
+      setWeeklyImage(img);
+    } catch {
+      setWeeklyShareStatus('تولید تصویر برنامه هفتگی با خطا مواجه شد.');
+    } finally {
+      setGeneratingWeeklyImg(false);
+    }
+  };
+
+  const handleShareWeeklyImage = async () => {
+    if (!weeklyImage) return;
+    const res = await shareYadbanImage({
+      fileName: weeklyImage.fileName,
+      blob: weeklyImage.blob,
+      base64Png: weeklyImage.base64Png,
+      title: 'برنامه هفتگی یادبان',
+    });
+    if (res.ok) {
+      setWeeklyShareStatus('پنجره اشتراک‌گذاری تصویر باز شد.');
+    } else if (res.error) {
+      setWeeklyShareStatus(res.error);
+    }
+  };
+
+  const handleDownloadWeeklyImage = async () => {
+    if (!weeklyImage) return;
+    const res = await exportYadbanImage({
+      fileName: weeklyImage.fileName,
+      dataUrl: weeklyImage.dataUrl,
+      base64Png: weeklyImage.base64Png,
+    });
+    if (res.ok) {
+      setWeeklyShareStatus('تصویر برنامه هفتگی با موفقیت ذخیره شد.');
+    } else if (res.cancelled) {
+      setWeeklyShareStatus('ذخیره تصویر لغو شد.');
+    } else if (res.error) {
+      setWeeklyShareStatus(res.error);
+    }
   };
 
   const nowHHMM = useMemo(() => {
@@ -323,14 +474,24 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
             >
               چه چیزی را نباید فراموش کنم؟
             </label>
-            <button
-              type="button"
-              onClick={() => onOpenModalForNew(quickText)}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--accent)] hover:underline cursor-pointer whitespace-nowrap"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>ثبت با جزئیات، الگو یا عکس</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => onOpenModalForNew(quickText)}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--accent)] hover:underline cursor-pointer whitespace-nowrap"
+              >
+                <ScanText className="w-3.5 h-3.5" />
+                <span>خواندن از تصویر (AI)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenModalForNew(quickText)}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer whitespace-nowrap"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>جزئیات و الگو</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
@@ -425,15 +586,15 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
         </form>
       </section>
 
-      {/* 3. کارت جمع‌وجورِ کار بعدی، با ساعت و اقدام مستقیم */}
+      {/* 3. کارت جمع‌وجورِ کار بعدی، با ساعت‌شمار و اقدام مستقیم */}
       <section
         aria-label="کار بعدی"
         className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5"
       >
         {nextTask ? (
           <>
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex items-center gap-2 text-xs">
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="font-bold text-[var(--accent)]">کار بعدی</span>
                 {nextTask.timeStr ? (
                   <>
@@ -448,6 +609,12 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
                     <span className="text-[var(--text-muted)]">بدون ساعت مشخص</span>
                   </>
                 )}
+                {nextTask.snoozedUntil && nextTask.snoozedUntil > nowMs && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-bold text-[var(--sem-warning)]">تعویق فعال</span>
+                  </>
+                )}
                 {nextTask.priority === 'important' && (
                   <>
                     <span aria-hidden="true">·</span>
@@ -458,12 +625,30 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
                   </>
                 )}
               </div>
+
               <p className="text-base font-extrabold text-[var(--text-primary)] truncate">
                 {nextTask.title}
               </p>
+
+              {/* ساعت‌شمار زنده تا کار بعدی */}
+              {nextTaskCountdown && (
+                <div
+                  className={`inline-flex items-center gap-2 text-xs font-bold tabular-nums ${
+                    nextTaskCountdown.isOverdue
+                      ? 'text-[var(--sem-warning)]'
+                      : 'text-[var(--accent)]'
+                  }`}
+                >
+                  <Timer className="w-3.5 h-3.5 shrink-0" />
+                  <span className="font-mono-tabular text-sm" dir="ltr">
+                    {nextTaskCountdown.clock}
+                  </span>
+                  <span>· {nextTaskCountdown.humanLabel}</span>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => handleToggleWithPop(nextTask.id)}
@@ -473,15 +658,27 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
                 <span>انجام شد</span>
               </button>
 
-              {nextTask.timeStr && (
-                <button
-                  type="button"
-                  onClick={() => onSnoozeItem(nextTask.id, 15)}
-                  className="min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-surface-tonal)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer whitespace-nowrap"
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>۱۵ دقیقه بعد</span>
-                </button>
+              {(nextTask.timeStr || (nextTask.snoozedUntil && nextTask.snoozedUntil > nowMs)) && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onSnoozeItem(nextTask.id, 15)}
+                    className="min-h-[44px] inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-surface-tonal)] px-3 text-xs font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer whitespace-nowrap"
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>۱۵ دقیقه بعد</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onCancelSchedule(nextTask.id)}
+                    className="min-h-[44px] inline-flex items-center justify-center gap-1 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--sem-danger)] cursor-pointer whitespace-nowrap"
+                    title="لغو زمان‌بندی یا تعویق"
+                  >
+                    <BellOff className="w-3.5 h-3.5" />
+                    <span>لغو زمان</span>
+                  </button>
+                </>
               )}
 
               <button
@@ -887,16 +1084,27 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
                             </a>
                           )}
 
-                          {!isDone && item.timeStr && (
-                            <button
-                              type="button"
-                              onClick={() => onSnoozeItem(item.id, 15)}
-                              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-[var(--text-secondary)] hover:bg-[var(--bg-surface-tonal)] cursor-pointer"
-                              title="تعویق ۱۵ دقیقه"
-                              aria-label="تعویق ۱۵ دقیقه"
-                            >
-                              <Clock className="w-4 h-4" />
-                            </button>
+                          {!isDone && (item.timeStr || (item.snoozedUntil && item.snoozedUntil > nowMs)) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => onSnoozeItem(item.id, 15)}
+                                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-[var(--text-secondary)] hover:bg-[var(--bg-surface-tonal)] cursor-pointer"
+                                title="تعویق ۱۵ دقیقه"
+                                aria-label="تعویق ۱۵ دقیقه"
+                              >
+                                <Clock className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onCancelSchedule(item.id)}
+                                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-[var(--text-secondary)] hover:text-[var(--sem-danger)] hover:bg-rose-500/10 cursor-pointer"
+                                title="لغو زمان‌بندی / تعویق"
+                                aria-label="لغو زمان‌بندی"
+                              >
+                                <BellOff className="w-4 h-4" />
+                              </button>
+                            </>
                           )}
 
                           <button
@@ -928,6 +1136,179 @@ export const TodayPlannerView: React.FC<TodayPlannerViewProps> = ({
           </div>
         )}
       </section>
+
+      {/* 5. بخش برنامه هفتگی در صفحه اول */}
+      <section
+        aria-label="برنامه هفتگی"
+        className="rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] overflow-hidden"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-[var(--border-subtle)]">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="w-4 h-4 text-[var(--accent)] shrink-0" />
+            <div>
+              <h2 className="text-sm font-extrabold text-[var(--text-primary)]">
+                برنامه هفتگی
+              </h2>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                برای مشاهده یا ثبت برنامه روی هر روز ضربه بزنید
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenWeeklyImageShare}
+            disabled={generatingWeeklyImg}
+            className="min-h-[38px] inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-soft)] text-[var(--accent-soft-text)] px-3.5 text-xs font-bold hover:opacity-90 disabled:opacity-60 cursor-pointer whitespace-nowrap shrink-0"
+          >
+            {generatingWeeklyImg ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Share2 className="w-3.5 h-3.5" />
+            )}
+            <span>{generatingWeeklyImg ? 'در حال ساخت تصویر...' : 'اشتراک‌گذاری تصویری'}</span>
+          </button>
+        </div>
+
+        <div className="divide-y divide-[var(--border-subtle)]">
+          {currentWeekDays.map((dayKey) => {
+            const parts = getJalaliDayParts(dayKey);
+            const dayDetails = getIranDateDetails(dayKey);
+            const isSelected = dayKey === selectedDateKey;
+            const dayTasks = items
+              .filter((item) => item.repeatDaily || item.dateStr === dayKey)
+              .sort((a, b) => (a.timeStr || '99:99').localeCompare(b.timeStr || '99:99'));
+            const pendingTasks = dayTasks.filter((item) =>
+              item.repeatDaily ? !item.completedDates.includes(dayKey) : !item.completed
+            );
+
+            return (
+              <div
+                key={dayKey}
+                className={`p-3.5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition-colors ${
+                  isSelected ? 'bg-[var(--accent-soft)]/45' : 'hover:bg-[var(--bg-surface-tonal)]/30'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelectDateKey(dayKey)}
+                  className="flex-1 min-w-0 text-right cursor-pointer space-y-1"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span
+                      className={`font-extrabold ${
+                        isSelected
+                          ? 'text-[var(--accent)]'
+                          : dayDetails.isOfficialHoliday || dayDetails.isFriday
+                            ? 'text-[var(--sem-danger)]'
+                            : 'text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {parts.isToday ? 'امروز' : parts.weekdayLong} · {parts.dayNum} {parts.monthName}
+                    </span>
+                    <span className="text-[var(--text-muted)] tabular-nums">
+                      ({toPersianDigits(pendingTasks.length)} کار مانده)
+                    </span>
+                    {dayDetails.events.length > 0 && (
+                      <span className="text-[11px] text-[var(--text-muted)] truncate">
+                        · {dayDetails.events[0].title}
+                      </span>
+                    )}
+                  </div>
+
+                  {dayTasks.length > 0 ? (
+                    <p className="text-xs text-[var(--text-secondary)] truncate">
+                      {dayTasks
+                        .slice(0, 3)
+                        .map((t) =>
+                          t.timeStr ? `${toPersianDigits(t.timeStr)} ${t.title}` : t.title
+                        )
+                        .join(' · ')}
+                      {dayTasks.length > 3
+                        ? ` (+${toPersianDigits(dayTasks.length - 3)} مورد دیگر)`
+                        : ''}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-[var(--text-muted)]">برنامه‌ای ثبت نشده</p>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onOpenModalForNew('', undefined, dayKey)}
+                  className="min-h-[36px] px-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-tonal)] text-xs font-semibold text-[var(--text-primary)] inline-flex items-center justify-center gap-1 hover:opacity-90 cursor-pointer whitespace-nowrap shrink-0 self-start sm:self-center"
+                >
+                  <Plus className="w-3.5 h-3.5 text-[var(--accent)]" />
+                  <span>افزودن</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Weekly Schedule Visual Share Card Modal */}
+      {weeklyImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="پیش‌نمایش تصویر برنامه هفتگی"
+            className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] shadow-2xl overflow-hidden animate-task-enter"
+          >
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border-subtle)]">
+              <h3 className="text-sm font-extrabold text-[var(--text-primary)]">
+                تصویر برنامه هفتگی آماده اشتراک‌گذاری
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setWeeklyImage(null);
+                  setWeeklyShareStatus('');
+                }}
+                className="min-w-[40px] min-h-[40px] rounded-full flex items-center justify-center text-[var(--text-muted)] hover:bg-[var(--bg-surface-tonal)] cursor-pointer"
+                aria-label="بستن پیش‌نمایش"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto flex-1 bg-[var(--bg-surface-tonal)]/50">
+              <img
+                src={weeklyImage.dataUrl}
+                alt="کارت تصویری برنامه هفتگی یادبان"
+                className="w-full h-auto rounded-2xl border border-[var(--border-subtle)] shadow-md"
+              />
+            </div>
+
+            <div className="p-4 border-t border-[var(--border-subtle)] space-y-2.5">
+              {weeklyShareStatus && (
+                <p className="text-xs font-semibold text-[var(--accent)] text-center">
+                  {weeklyShareStatus}
+                </p>
+              )}
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleShareWeeklyImage}
+                  className="flex-1 min-h-[44px] inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[var(--accent)] text-[var(--accent-on)] text-xs sm:text-sm font-bold hover:opacity-95 cursor-pointer whitespace-nowrap"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>اشتراک‌گذاری تصویر</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadWeeklyImage}
+                  className="min-h-[44px] inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-surface-tonal)] px-4 text-xs sm:text-sm font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer whitespace-nowrap"
+                >
+                  <Download className="w-4 h-4 text-[var(--accent)]" />
+                  <span>ذخیره تصویر</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

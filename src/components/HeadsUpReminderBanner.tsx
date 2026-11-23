@@ -7,6 +7,7 @@ interface HeadsUpReminderBannerProps {
   alert: ActiveReminderAlert | null;
   onComplete: (id: string) => void;
   onSnooze: (id: string, minutes: number) => void;
+  onCancelSchedule?: (id: string) => void;
   onDismiss: () => void;
 }
 
@@ -14,6 +15,7 @@ export const HeadsUpReminderBanner: React.FC<HeadsUpReminderBannerProps> = ({
   alert,
   onComplete,
   onSnooze,
+  onCancelSchedule,
   onDismiss,
 }) => {
   if (!alert) return null;
@@ -98,33 +100,47 @@ export const HeadsUpReminderBanner: React.FC<HeadsUpReminderBannerProps> = ({
       </div>
 
       <div className="mt-4 space-y-2">
-        <button
-          type="button"
-          onClick={() => onComplete(item.id)}
-          className="w-full min-h-[46px] inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--sem-done)] px-4 py-2 text-sm font-bold text-white hover:opacity-95 cursor-pointer whitespace-nowrap"
-        >
-          <Check className="w-4 h-4" />
-          <span>انجام شد</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onComplete(item.id)}
+            className="flex-1 min-h-[46px] inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--sem-done)] px-4 py-2 text-sm font-bold text-white hover:opacity-95 cursor-pointer whitespace-nowrap"
+          >
+            <Check className="w-4 h-4" />
+            <span>انجام شد</span>
+          </button>
 
-        <div className="grid grid-cols-4 gap-1.5">
-          {[
-            { label: '۵ دقیقه', mins: 5 },
-            { label: '۱۵ دقیقه', mins: 15 },
-            { label: '۱ ساعت', mins: 60 },
-            { label: smartLater.label, mins: smartLater.minutes },
-          ].map((opt) => (
+          {onCancelSchedule && item.id !== 'test' && item.id !== 'tomorrow-digest' && (
             <button
-              key={opt.label}
               type="button"
-              onClick={() => onSnooze(item.id, opt.mins)}
-              className="min-h-[38px] inline-flex items-center justify-center gap-1 rounded-xl bg-[var(--bg-surface-tonal)] px-2 text-[11px] font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer whitespace-nowrap"
+              onClick={() => onCancelSchedule(item.id)}
+              className="min-h-[46px] px-3.5 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-surface-tonal)] text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--sem-danger)] cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Clock className="w-3 h-3 text-[var(--sem-warning)] shrink-0" />
-              <span>{opt.label}</span>
+              لغو زمان‌بندی
             </button>
-          ))}
+          )}
         </div>
+
+        {item.id !== 'tomorrow-digest' && (
+          <div className="grid grid-cols-4 gap-1.5">
+            {[
+              { label: '۵ دقیقه', mins: 5 },
+              { label: '۱۵ دقیقه', mins: 15 },
+              { label: '۱ ساعت', mins: 60 },
+              { label: smartLater.label, mins: smartLater.minutes },
+            ].map((opt) => (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => onSnooze(item.id, opt.mins)}
+                className="min-h-[38px] inline-flex items-center justify-center gap-1 rounded-xl bg-[var(--bg-surface-tonal)] px-2 text-[11px] font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer whitespace-nowrap"
+              >
+                <Clock className="w-3 h-3 text-[var(--sem-warning)] shrink-0" />
+                <span>{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

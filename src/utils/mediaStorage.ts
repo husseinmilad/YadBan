@@ -1,6 +1,21 @@
+import { MemoryCategory } from '../types/memory';
+
 const PHOTO_DB_NAME = 'yadban_offline_photos_v1';
 const PHOTO_STORE_NAME = 'photo_notes';
 const PHOTO_DB_VERSION = 1;
+
+export interface AiImageAnalysisResult {
+  extractedText: string;
+  title: string;
+  category: MemoryCategory;
+  timeStr: string;
+  dateHint: string;
+  phoneNumber: string;
+  contactName: string;
+  locationHint: string;
+  dosage: string;
+  notes: string;
+}
 
 function openPhotoDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -62,7 +77,7 @@ export async function deletePhotoBlob(id: string): Promise<void> {
   }
 }
 
-export async function compressImageFile(file: File, maxDim = 1200): Promise<Blob> {
+export async function compressImageFile(file: File, maxDim = 1400): Promise<Blob> {
   if (typeof document === 'undefined' || typeof createImageBitmap === 'undefined') {
     return file;
   }
@@ -83,7 +98,7 @@ export async function compressImageFile(file: File, maxDim = 1200): Promise<Blob
     bitmap.close();
 
     const compressed = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.82)
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.86)
     );
     return compressed || file;
   } catch {
@@ -91,27 +106,70 @@ export async function compressImageFile(file: File, maxDim = 1200): Promise<Blob
   }
 }
 
-/**
- * Attempts offline on-device text detection if browser/WebView supports Shape Detection TextDetector.
- * Gracefully returns empty string on unsupported WebViews so photo capture never fails or requires network.
- */
-export async function tryOnDeviceTextDetection(source: Blob): Promise<string> {
-  try {
-    const win = window as unknown as {
-      TextDetector?: new () => { detect: (img: ImageBitmap) => Promise<Array<{ rawValue?: string }>> };
+export function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const commaIdx = result.indexOf(',');
+      resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
     };
-    if (!win.TextDetector || typeof createImageBitmap === 'undefined') {
-      return '';
-    }
-    const detector = new win.TextDetector();
-    const bitmap = await createImageBitmap(source);
-    const blocks = await detector.detect(bitmap);
-    bitmap.close();
-    const lines = blocks
-      .map((b) => (b.rawValue || '').trim())
-      .filter(Boolean);
-    return lines.join('\n');
-  } catch {
-    return '';
+    reader.onerror = () => reject(new Error('خطا در آماده‌سازی تصویر'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function getAiEndpointUrl(apiPath: string): string {
+  const configuredBase = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (configuredBase) {
+    return `${configuredBase}${apiPath}`;
   }
+  return apiPath;
+}
+
+export async function analyzeImageWithAi(source: Blob): Promise<AiImageAnalysisResult> {
+  const imageBase64 = await blobToBase64(source);
+  const endpoint = getAiEndpointUrl('/api/ai/read-image');
+
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageBase64,
+        mimeType: source.type || 'image/jpeg',
+      }),
+    });
+  } catch {
+    throw new Error(
+      'ارتباط با سرور هوش مصنوعی برقرار نشد. برای خواندن متن از روی تصویر، اتصال اینترنت یا سرور فعال لازم است.'
+    );
+  }
+
+  let data: Partial<AiImageAnalysisResult> & { error?: string } = {};
+  try {
+    data = (await res.json()) as Partial<AiImageAnalysisResult> & { error?: string };
+  } catch {
+    // fallback message below
+  }
+
+  if (!res.ok) {
+    throw new Error(
+      data.error || 'خطا در تحلیل تصویر توسط هوش مصنوعی. لطفاً دوباره امتحان کنید.'
+    );
+  }
+
+  return {
+    extractedText: data.extractedText || '',
+    title: data.title || '',
+    category: data.category || 'work',
+    timeStr: data.timeStr || '',
+    dateHint: data.dateHint || '',
+    phoneNumber: data.phoneNumber || '',
+    contactName: data.contactName || '',
+    locationHint: data.locationHint || '',
+    dosage: data.dosage || '',
+    notes: data.notes || '',
+  };
 }

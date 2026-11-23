@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BellRing,
   Calendar,
@@ -10,6 +10,7 @@ import {
   Mic,
   Pin,
   Repeat,
+  ScanText,
   X,
 } from 'lucide-react';
 import { getIranDateDetails } from '../data/iranCalendarEvents';
@@ -33,6 +34,7 @@ import {
   toEnglishDigits,
   toPersianDigits,
 } from '../utils/dateFa';
+import { AiImageAnalysisResult } from '../utils/mediaStorage';
 import { dictatePersianText } from '../utils/nativeBridge';
 import { CategoryIcon } from './CategoryIcon';
 import { PhotoAttachmentControl } from './PhotoAttachmentControl';
@@ -156,6 +158,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   const [calendarRefKey, setCalendarRefKey] = useState(defaultDateKey);
   const [isDictating, setIsDictating] = useState(false);
   const [dictateError, setDictateError] = useState('');
+  const photoSectionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -196,10 +199,12 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
       setUserTouchedCategory(true);
       setSelectedTimePreset(null);
     } else {
+      const startCat = initialCategory || 'work';
+      const storageOnly = startCat === 'phone' || startCat === 'anchor' || startCat === 'idea';
       const startDate = defaultDateKey || todayKey;
       setTitle(initialRawText);
       setNotes('');
-      setCategory(initialCategory || 'work');
+      setCategory(startCat);
       setCustomCategoryId(undefined);
       setDateStr(startDate);
       setCalendarRefKey(startDate);
@@ -207,7 +212,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
       setRepeatDaily(false);
       setRepeatUntilDone(false);
       setPriority('normal');
-      setPreReminderMinutes(10);
+      setPreReminderMinutes(storageOnly ? 0 : 10);
       setPhoneNumber('');
       setContactName('');
       setLocationHint('');
@@ -216,7 +221,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
       setMealTiming('');
       setDurationOrQty('');
       setPersonOrPlace('');
-      setPinnedToWidget(initialCategory === 'anchor' || initialCategory === 'health');
+      setPinnedToWidget(startCat === 'anchor' || startCat === 'health' || startCat === 'phone');
       setVoiceNoteId(undefined);
       setVoiceDurationSec(undefined);
       setPhotoId(undefined);
@@ -309,7 +314,14 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
     setPriority(tpl.isImportant ? 'important' : 'normal');
   };
 
+  const isStorageOnly = category === 'phone' || category === 'anchor' || category === 'idea';
+
   const applyQuickTimeOffset = (minutesFromNow: number, presetId: TimePresetId) => {
+    if (selectedTimePreset === presetId) {
+      setTimeStr('');
+      setSelectedTimePreset(null);
+      return;
+    }
     const target = new Date(Date.now() + minutesFromNow * 60000);
     const nextDate = getLocalDateKey(target);
     setDateStr(nextDate);
@@ -321,6 +333,11 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   };
 
   const applyPresetSlot = (tomorrow: boolean, time: string, presetId: TimePresetId) => {
+    if (selectedTimePreset === presetId) {
+      setTimeStr('');
+      setSelectedTimePreset(null);
+      return;
+    }
     const base = getLocalDateKey(new Date());
     const nextDate = tomorrow ? addDaysToDateKey(base, 1) : base;
     setDateStr(nextDate);
@@ -349,9 +366,113 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
     setCategory(cat);
     setCustomCategoryId(customId);
     setUserTouchedCategory(true);
-    if ((cat === 'health' || cat === 'anchor') && !initialItem) {
+    if ((cat === 'health' || cat === 'anchor' || cat === 'phone') && !initialItem) {
       setPinnedToWidget(true);
     }
+    if (!initialItem && (cat === 'phone' || cat === 'anchor' || cat === 'idea')) {
+      setPreReminderMinutes(0);
+    } else if (!initialItem && preReminderMinutes === 0) {
+      setPreReminderMinutes(10);
+    }
+  };
+
+  const resolveDateHintKey = (hint: string): string => {
+    if (/پس.?فردا/.test(hint)) return afterTomorrowKey;
+    if (/فردا/.test(hint)) return tomorrowKey;
+    return dateStr || todayKey;
+  };
+
+  const handleAiExtracted = (analysis: AiImageAnalysisResult, force = false) => {
+    const nextCat = analysis.category || category;
+    if (!customCategoryId && (!userTouchedCategory || force)) {
+      setCategory(nextCat);
+      if (nextCat === 'phone' || nextCat === 'anchor' || nextCat === 'idea') {
+        setPreReminderMinutes(0);
+      }
+    }
+    if (analysis.title && (force || !title.trim())) {
+      setTitle(analysis.title);
+    }
+    if (analysis.timeStr && (force || !timeStr)) {
+      setTimeStr(analysis.timeStr);
+      setSelectedTimePreset(null);
+    }
+    if (analysis.dateHint) {
+      const resolved = resolveDateHintKey(analysis.dateHint);
+      if (resolved !== dateStr) {
+        setDateStr(resolved);
+        setCalendarRefKey(resolved);
+      }
+    }
+    if (analysis.phoneNumber && (force || !phoneNumber.trim())) {
+      setPhoneNumber(analysis.phoneNumber);
+    }
+    if (analysis.contactName && (force || !contactName.trim())) {
+      setContactName(analysis.contactName);
+    }
+    if (analysis.locationHint && (force || !locationHint.trim())) {
+      setLocationHint(analysis.locationHint);
+    }
+    if (analysis.dosage && (force || !dosage.trim())) {
+      setDosage(analysis.dosage);
+    }
+    const mergedNotes = analysis.notes?.trim() || analysis.extractedText?.trim() || '';
+    if (mergedNotes && (force || !notes.trim())) {
+      setNotes(mergedNotes);
+    }
+  };
+
+  const handleQuickSaveFromAi = (
+    analysis: AiImageAnalysisResult,
+    nextPhotoId: string
+  ) => {
+    const cat = analysis.category || category;
+    const storageOnlyCat = cat === 'phone' || cat === 'anchor' || cat === 'idea';
+    const resolvedDate = resolveDateHintKey(analysis.dateHint || '');
+    const cleanPhone = toEnglishDigits(analysis.phoneNumber || phoneNumber).replace(/[^\d+]/g, '');
+    const tStr = analysis.timeStr || timeStr;
+    const tBlock: TimeBlock = tStr ? getTimeBlockFromTime(tStr) : 'anytime';
+
+    onSave(
+      {
+        title:
+          analysis.title?.trim() ||
+          title.trim() ||
+          (cleanPhone
+            ? `تماس با ${analysis.contactName || toPersianDigits(cleanPhone)}`
+            : 'مورد خوانده‌شده از تصویر'),
+        notes: (analysis.notes || notes || '').trim() || undefined,
+        category: cat,
+        customCategoryId,
+        dateStr: storageOnlyCat && !tStr && !repeatDaily ? '' : resolvedDate,
+        timeStr: tStr,
+        timeBlock: tBlock,
+        repeatDaily,
+        repeatUntilDone,
+        priority,
+        completed: initialItem?.completed ?? false,
+        completedDates: initialItem?.completedDates ?? [],
+        preReminderMinutes: tStr ? preReminderMinutes : 0,
+        snoozedUntil: tStr ? initialItem?.snoozedUntil : undefined,
+        phoneNumber: cleanPhone || undefined,
+        contactName: (analysis.contactName || contactName).trim() || undefined,
+        locationHint: (analysis.locationHint || locationHint).trim() || undefined,
+        subType: subType.trim() || undefined,
+        dosage: (analysis.dosage || dosage).trim() || undefined,
+        mealTiming: mealTiming.trim() || undefined,
+        durationOrQty: durationOrQty.trim() || undefined,
+        personOrPlace: personOrPlace.trim() || undefined,
+        pinnedToWidget: pinnedToWidget || cat === 'anchor' || cat === 'health' || cat === 'phone',
+        voiceNoteId,
+        voiceDurationSec,
+        photoId: nextPhotoId,
+        photoText: (analysis.extractedText || photoText || '').trim() || undefined,
+        dependsOnId: dependsOnId || undefined,
+        nextStepTitle: nextStepTitle.trim() || undefined,
+      },
+      initialItem?.id
+    );
+    onClose();
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -381,7 +502,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         notes: notes.trim() || undefined,
         category,
         customCategoryId,
-        dateStr: category === 'anchor' && !timeStr ? '' : dateStr,
+        dateStr: isStorageOnly && !timeStr && !repeatDaily ? '' : dateStr,
         timeStr,
         timeBlock,
         repeatDaily,
@@ -389,7 +510,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         priority,
         completed: initialItem?.completed ?? false,
         completedDates: initialItem?.completedDates ?? [],
-        preReminderMinutes,
+        preReminderMinutes: timeStr ? preReminderMinutes : 0,
+        snoozedUntil: timeStr ? initialItem?.snoozedUntil : undefined,
         phoneNumber: cleanPhone || undefined,
         contactName: contactName.trim() || undefined,
         locationHint: locationHint.trim() || undefined,
@@ -514,19 +636,32 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                 {formCfg.titleLabel}
               </label>
 
-              <button
-                type="button"
-                onClick={handleDictateText}
-                disabled={isDictating}
-                className={`min-h-[34px] inline-flex items-center gap-1.5 rounded-xl px-3 text-xs font-bold border transition-all cursor-pointer ${
-                  isDictating
-                    ? 'bg-rose-600 text-white border-rose-600'
-                    : 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)] border-[var(--accent)]/30 hover:opacity-90'
-                }`}
-              >
-                <Mic className="w-3.5 h-3.5" />
-                <span>{isDictating ? 'در حال شنیدن...' : 'تایپ با ضبط صدا'}</span>
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    photoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  }
+                  className="min-h-[34px] inline-flex items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold border border-[var(--border-subtle)] bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] hover:border-[var(--accent)] cursor-pointer whitespace-nowrap"
+                >
+                  <ScanText className="w-3.5 h-3.5 text-[var(--accent)]" />
+                  <span>خواندن از تصویر (AI)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDictateText}
+                  disabled={isDictating}
+                  className={`min-h-[34px] inline-flex items-center gap-1.5 rounded-xl px-3 text-xs font-bold border transition-all cursor-pointer whitespace-nowrap ${
+                    isDictating
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)] border-[var(--accent)]/30 hover:opacity-90'
+                  }`}
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>{isDictating ? 'در حال شنیدن...' : 'تایپ با ضبط صدا'}</span>
+                </button>
+              </div>
             </div>
 
             <input
@@ -806,23 +941,32 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
 
           {/* Fast time presets + Jalali Date & Time pickers */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                زمان‌بندی و یادآور
+                {isStorageOnly
+                  ? 'زمان‌بندی و یادآور (اختیاری — برای ذخیره ساده نیازی به ساعت نیست)'
+                  : 'زمان‌بندی و یادآور'}
               </span>
-              {timeStr && (
+              {(timeStr || selectedTimePreset) && (
                 <button
                   type="button"
                   onClick={() => {
                     setTimeStr('');
                     setSelectedTimePreset(null);
+                    setPreReminderMinutes(0);
                   }}
-                  className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                  className="text-xs font-bold text-[var(--sem-danger)] hover:underline cursor-pointer whitespace-nowrap"
                 >
-                  حذف ساعت
+                  لغو زمان‌بندی
                 </button>
               )}
             </div>
+
+            {isStorageOnly && !timeStr && (
+              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                این مورد بدون نیاز به ساعت صرفاً در «صندوق ذهن» ذخیره می‌شود؛ فقط در صورت نیاز ساعت انتخاب کنید.
+              </p>
+            )}
 
             <div className="flex flex-wrap gap-2">
               {(
@@ -1124,15 +1268,19 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               }}
             />
 
-            <PhotoAttachmentControl
-              photoId={photoId}
-              photoText={photoText}
-              enableOcrByDefault={enablePhotoOcr}
-              onChange={(id, txt) => {
-                setPhotoId(id);
-                setPhotoText(txt);
-              }}
-            />
+            <div ref={photoSectionRef}>
+              <PhotoAttachmentControl
+                photoId={photoId}
+                photoText={photoText}
+                enableOcrByDefault={enablePhotoOcr}
+                onChange={(id, txt) => {
+                  setPhotoId(id);
+                  setPhotoText(txt);
+                }}
+                onAiExtracted={(analysis) => handleAiExtracted(analysis, false)}
+                onQuickSaveExtracted={handleQuickSaveFromAi}
+              />
+            </div>
           </div>
 
           {/* Optional extra details */}

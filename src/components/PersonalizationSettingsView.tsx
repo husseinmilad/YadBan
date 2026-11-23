@@ -59,6 +59,7 @@ interface PersonalizationSettingsViewProps {
   onResetTasks: (mode: 'clear_all' | 'uncheck_done') => void;
   onResetDemo: () => void;
   onTriggerTestReminder: () => void;
+  onTriggerTomorrowDigest?: () => void;
 }
 
 const PALETTES: { id: PaletteId; label: string; swatch: string }[] = [
@@ -79,6 +80,7 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
   onResetTasks,
   onResetDemo,
   onTriggerTestReminder,
+  onTriggerTomorrowDigest,
 }) => {
   const [permState, setPermState] = useState<NativePermissionsStatus>({
     isNativeAndroid: false,
@@ -800,16 +802,73 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
             )}
           </div>
 
+          {/* Daily Tomorrow Schedule Digest Setting */}
+          <div className="rounded-[var(--radius-control)] border border-[var(--border-subtle)] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-[var(--text-primary)]">
+                  اعلام روزانه برنامه‌های فردا
+                </p>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  سر ساعت مشخص، خلاصه کارهای فردا را به شما یادآوری و اعلام کند.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({
+                    tomorrowDigestEnabled: !(settings.tomorrowDigestEnabled ?? true),
+                  })
+                }
+                className={`min-h-[40px] px-4 rounded-xl text-xs font-bold cursor-pointer shrink-0 ${
+                  (settings.tomorrowDigestEnabled ?? true)
+                    ? 'bg-[var(--accent)] text-[var(--accent-on)]'
+                    : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)]'
+                }`}
+              >
+                {(settings.tomorrowDigestEnabled ?? true) ? 'روشن' : 'خاموش'}
+              </button>
+            </div>
+
+            {(settings.tomorrowDigestEnabled ?? true) && (
+              <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-[var(--border-subtle)]">
+                <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                  ساعت اعلام برنامه‌های فردا:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    dir="ltr"
+                    value={settings.tomorrowDigestTime || '21:00'}
+                    onChange={(e) =>
+                      onUpdateSettings({ tomorrowDigestTime: e.target.value || '21:00' })
+                    }
+                    className="min-h-[38px] rounded-xl bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] px-3 text-xs font-mono-tabular text-[var(--text-primary)]"
+                  />
+                  {onTriggerTomorrowDigest && (
+                    <button
+                      type="button"
+                      onClick={onTriggerTomorrowDigest}
+                      className="min-h-[38px] px-3 rounded-xl bg-[var(--accent-soft)] text-[var(--accent-soft-text)] text-xs font-bold cursor-pointer whitespace-nowrap"
+                    >
+                      پیش‌نمایش اعلان
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Photo OCR Recognition Toggle */}
           <div className="rounded-[var(--radius-control)] border border-[var(--border-subtle)] p-4 flex items-center justify-between gap-3">
             <div className="flex items-start gap-2.5">
               <Camera className="w-4 h-4 text-[var(--accent)] mt-0.5 shrink-0" />
               <div>
                 <p className="text-sm font-bold text-[var(--text-primary)]">
-                  تشخیص متن روی عکس برگه‌ها و کارت‌ها
+                  خوانش خودکار متن از روی تصویر با هوش مصنوعی
                 </p>
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  هنگام پیوست عکس به‌صورت آفلاین متن را استخراج و قابل جست‌وجو می‌کند.
+                  هنگام افزودن عکس برگه، کارت یا محل وسیله، متن و کار مرتبط را خودکار با هوش مصنوعی استخراج می‌کند.
                 </p>
               </div>
             </div>

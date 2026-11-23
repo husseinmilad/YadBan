@@ -13,16 +13,35 @@ import {
   Smartphone,
   Wifi,
 } from 'lucide-react';
-import { MemoryItem, UserSettings, WidgetConfig, WidgetStyle } from '../types/memory';
+import {
+  MemoryItem,
+  NativeWidgetTheme,
+  UserSettings,
+  WidgetConfig,
+  WidgetStyle,
+} from '../types/memory';
 import { toPersianDigits } from '../utils/dateFa';
 import { isNativeAndroidApp, refreshNativeHomeWidgets } from '../utils/nativeBridge';
 import { AndroidWidgetRenderer } from './AndroidWidgetRenderer';
+
+const NATIVE_WIDGET_THEMES: {
+  id: NativeWidgetTheme;
+  label: string;
+  swatchClass: string;
+}[] = [
+  { id: 'ocean', label: 'اقیانوسی', swatchClass: 'bg-sky-800' },
+  { id: 'emerald', label: 'زمردی', swatchClass: 'bg-emerald-800' },
+  { id: 'midnight', label: 'سرمه‌ای', swatchClass: 'bg-slate-800' },
+  { id: 'amber', label: 'کهربایی', swatchClass: 'bg-amber-800' },
+  { id: 'plum', label: 'یاقوتی', swatchClass: 'bg-purple-900' },
+];
 
 interface WidgetsStudioViewProps {
   widgets: WidgetConfig[];
   items: MemoryItem[];
   settings: UserSettings;
   onUpdateWidgets: (next: WidgetConfig[]) => void;
+  onChangeNativeWidgetTheme?: (theme: NativeWidgetTheme) => void;
   onToggleFloatingWidget: () => void;
   onToggleComplete: (id: string, dateKey: string) => void;
   onQuickAdd: (rawText: string) => void;
@@ -36,6 +55,7 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
   items,
   settings,
   onUpdateWidgets,
+  onChangeNativeWidgetTheme,
   onToggleFloatingWidget,
   onToggleComplete,
   onQuickAdd,
@@ -55,9 +75,9 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
   }, []);
 
   const handleSyncHomeWidgets = async () => {
-    const ok = await refreshNativeHomeWidgets(items);
+    const ok = await refreshNativeHomeWidgets(items, settings);
     if (ok) {
-      onShowToast?.('ویجت‌های صفحه اول گوشی همگام‌سازی شدند');
+      onShowToast?.('ویجت‌های صفحه اول گوشی با تم انتخابی همگام‌سازی شدند');
     } else {
       onShowToast?.('در نسخه نصب‌شده APK اندروید، ویجت صفحه اول گوشی بلافاصله بروزرسانی می‌شود');
     }
@@ -247,9 +267,46 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
         </section>
 
         {/* Widget Customizer Panel */}
-        <aside className="lg:col-span-4 rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 space-y-4">
+        <aside className="lg:col-span-4 rounded-[var(--radius-card)] bg-[var(--bg-surface)] border border-[var(--border-subtle)] p-5 space-y-5">
+          {/* Native Android Home Widget Non-White Theme Picker */}
+          <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)]/75 border border-[var(--border-subtle)] p-3.5 space-y-2.5">
+            <div>
+              <h2 className="text-sm font-extrabold text-[var(--text-primary)]">
+                تم ویجت صفحه اصلی اندروید
+              </h2>
+              <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                تم‌های غیر سفید و خوانا برای ویجت‌های واقعی روی لانچر گوشی
+              </p>
+            </div>
+            <div className="grid grid-cols-5 gap-1.5">
+              {NATIVE_WIDGET_THEMES.map((t) => {
+                const active = (settings.nativeWidgetTheme || 'ocean') === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      onChangeNativeWidgetTheme?.(t.id);
+                      onUpdateWidgets(widgets.map((w) => ({ ...w, style: t.id })));
+                    }}
+                    className={`flex flex-col items-center gap-1 rounded-xl p-1.5 border transition-all cursor-pointer ${
+                      active
+                        ? 'border-[var(--accent)] bg-[var(--bg-surface)] shadow-sm'
+                        : 'border-transparent hover:bg-[var(--bg-surface)]/70'
+                    }`}
+                  >
+                    <span className={`w-6 h-6 rounded-full border border-white/25 ${t.swatchClass}`} />
+                    <span className="text-[10px] font-bold text-[var(--text-primary)] whitespace-nowrap">
+                      {t.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <h2 className="text-base font-bold text-[var(--text-primary)]">
-            شخصی‌سازی چیدمان و عرض ویجت‌ها
+            شخصی‌سازی چیدمان، عرض و رنگ هر ویجت
           </h2>
 
           <div className="divide-y divide-[var(--border-subtle)]">
@@ -316,21 +373,15 @@ export const WidgetsStudioView: React.FC<WidgetsStudioViewProps> = ({
                       ))}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      {(
-                        [
-                          { id: 'tonal', label: 'متریال رنگی' },
-                          { id: 'glass', label: 'شیشه‌ای' },
-                          { id: 'contrast', label: 'تیره کنتراست' },
-                        ] as const
-                      ).map((st) => (
+                    <div className="grid grid-cols-5 gap-1">
+                      {NATIVE_WIDGET_THEMES.map((st) => (
                         <button
                           key={st.id}
                           type="button"
                           onClick={() => setStyle(w.id, st.id)}
-                          className={`flex-1 min-h-[34px] rounded-xl text-xs font-medium border cursor-pointer ${
+                          className={`min-h-[32px] rounded-lg px-1 text-[10px] font-bold border transition-all cursor-pointer whitespace-nowrap ${
                             w.style === st.id
-                              ? 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)] border-[var(--accent)]'
+                              ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
                               : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)] border-transparent'
                           }`}
                         >

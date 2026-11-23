@@ -3,7 +3,7 @@
     android:id="@+id/widget_today_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_bg_tonal"
+    android:background="@drawable/widget_bg_ocean"
     android:layoutDirection="rtl"
     android:orientation="vertical"
     android:padding="14dp">
@@ -27,7 +27,7 @@
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:text="یادبان · برنامه امروز"
-                android:textColor="#0F172A"
+                android:textColor="#F8FAFC"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -39,7 +39,7 @@
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:text="در حال بارگذاری..."
-                android:textColor="#475569"
+                android:textColor="#BAE6FD"
                 android:textSize="11sp" />
         </LinearLayout>
 
@@ -48,7 +48,7 @@
             android:layout_width="wrap_content"
             android:layout_height="34dp"
             android:layout_marginStart="6dp"
-            android:background="@drawable/widget_btn_accent"
+            android:background="@drawable/widget_btn_ocean"
             android:gravity="center"
             android:maxLines="1"
             android:paddingLeft="10dp"
@@ -64,7 +64,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:background="@drawable/widget_row_bg"
+        android:background="@drawable/widget_row_ocean"
         android:gravity="center_vertical"
         android:minHeight="38dp"
         android:orientation="horizontal"
@@ -77,7 +77,7 @@
             android:layout_height="22dp"
             android:gravity="center"
             android:text="○"
-            android:textColor="#0F766E"
+            android:textColor="#7DD3FC"
             android:textSize="15sp"
             android:textStyle="bold" />
 
@@ -89,7 +89,7 @@
             android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="#0F172A"
+            android:textColor="#F8FAFC"
             android:textSize="12sp" />
     </LinearLayout>
 
@@ -98,7 +98,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:background="@drawable/widget_row_bg"
+        android:background="@drawable/widget_row_ocean"
         android:gravity="center_vertical"
         android:minHeight="38dp"
         android:orientation="horizontal"
@@ -111,7 +111,7 @@
             android:layout_height="22dp"
             android:gravity="center"
             android:text="○"
-            android:textColor="#0F766E"
+            android:textColor="#7DD3FC"
             android:textSize="15sp"
             android:textStyle="bold" />
 
@@ -123,7 +123,7 @@
             android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="#0F172A"
+            android:textColor="#F8FAFC"
             android:textSize="12sp" />
     </LinearLayout>
 
@@ -132,7 +132,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:background="@drawable/widget_row_bg"
+        android:background="@drawable/widget_row_ocean"
         android:gravity="center_vertical"
         android:minHeight="38dp"
         android:orientation="horizontal"
@@ -145,7 +145,7 @@
             android:layout_height="22dp"
             android:gravity="center"
             android:text="○"
-            android:textColor="#0F766E"
+            android:textColor="#7DD3FC"
             android:textSize="15sp"
             android:textStyle="bold" />
 
@@ -157,7 +157,7 @@
             android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="#0F172A"
+            android:textColor="#F8FAFC"
             android:textSize="12sp" />
     </LinearLayout>
 
@@ -168,7 +168,7 @@
         android:layout_marginTop="14dp"
         android:gravity="center"
         android:text="برنامه‌ای برای امروز ثبت نشده است. برای افزودن + ثبت فوری را بزنید."
-        android:textColor="#64748B"
+        android:textColor="#E0F2FE"
         android:textSize="12sp"
         android:visibility="gone" />
 </LinearLayout>

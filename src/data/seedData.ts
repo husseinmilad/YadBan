@@ -76,6 +76,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   notificationsEnabled: false,
   showFloatingWidget: false,
   enablePhotoOcr: true,
+  nativeWidgetTheme: 'ocean',
+  tomorrowDigestEnabled: true,
+  tomorrowDigestTime: '21:00',
   customCategories: DEFAULT_CUSTOM_CATEGORIES,
   templates: DEFAULT_TEMPLATES,
 };
@@ -87,7 +90,7 @@ export const DEFAULT_WIDGETS: WidgetConfig[] = [
     title: 'ساعت و یادآور بعدی',
     enabled: true,
     size: '4x2',
-    style: 'tonal',
+    style: 'ocean',
     order: 0,
   },
   {
@@ -96,7 +99,7 @@ export const DEFAULT_WIDGETS: WidgetConfig[] = [
     title: 'ثبت سریع ذهنی و شماره',
     enabled: true,
     size: '4x2',
-    style: 'glass',
+    style: 'midnight',
     order: 1,
   },
   {
@@ -105,7 +108,7 @@ export const DEFAULT_WIDGETS: WidgetConfig[] = [
     title: 'حلقه پیشرفت و روتین روزانه',
     enabled: true,
     size: '2x2',
-    style: 'tonal',
+    style: 'emerald',
     order: 2,
   },
   {
@@ -114,7 +117,7 @@ export const DEFAULT_WIDGETS: WidgetConfig[] = [
     title: 'شماره‌های ضروری و لنگر حافظه',
     enabled: true,
     size: '2x2',
-    style: 'contrast',
+    style: 'plum',
     order: 3,
   },
 ];

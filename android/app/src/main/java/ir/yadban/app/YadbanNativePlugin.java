@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.speech.RecognizerIntent;
+import android.util.Base64;
 
 import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
@@ -45,6 +46,7 @@ import java.util.ArrayList;
 public class YadbanNativePlugin extends Plugin {
 
     private File pendingBackupTempFile;
+    private File pendingImageTempFile;
 
     @PluginMethod
     public void saveOfflineSnapshot(PluginCall call) {
@@ -450,6 +452,166 @@ public class YadbanNativePlugin extends Plugin {
             ret.put("error", "خطا در اشتراک‌گذاری فایل پشتیبان");
         }
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void shareImageFile(PluginCall call) {
+        String rawName = call.getString("fileName", "yadban-weekly.png");
+        String safeName = sanitizeImageFileName(rawName);
+        String base64Png = call.getString("base64Png", "");
+
+        Context ctx = getContext();
+        JSObject ret = new JSObject();
+        try {
+            File tempFile = writeCacheImageFile(ctx, safeName, base64Png);
+            launchImageShareChooser(ctx, tempFile, safeName);
+            ret.put("ok", true);
+        } catch (Exception ex) {
+            ret.put("ok", false);
+            ret.put("error", "خطا در اشتراک‌گذاری تصویر");
+        }
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void exportImageFile(PluginCall call) {
+        String rawName = call.getString("fileName", "yadban-weekly.png");
+        String safeName = sanitizeImageFileName(rawName);
+        String base64Png = call.getString("base64Png", "");
+
+        Context ctx = getContext();
+        File tempFile;
+        try {
+            tempFile = writeCacheImageFile(ctx, safeName, base64Png);
+        } catch (Exception ex) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("error", "خطا در آماده‌سازی فایل تصویر");
+            call.resolve(ret);
+            return;
+        }
+
+        pendingImageTempFile = tempFile;
+
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        intent.putExtra(Intent.EXTRA_TITLE, safeName);
+
+        try {
+            startActivityForResult(call, intent, "exportImageResult");
+        } catch (ActivityNotFoundException ex) {
+            try {
+                launchImageShareChooser(ctx, tempFile, safeName);
+                pendingImageTempFile = null;
+                JSObject ret = new JSObject();
+                ret.put("ok", true);
+                ret.put("method", "android_share_fallback");
+                call.resolve(ret);
+            } catch (Exception shareEx) {
+                pendingImageTempFile = null;
+                JSObject ret = new JSObject();
+                ret.put("ok", false);
+                ret.put("error", "امکان ذخیره یا اشتراک‌گذاری تصویر وجود ندارد");
+                call.resolve(ret);
+            }
+        }
+    }
+
+    @ActivityCallback
+    private void exportImageResult(PluginCall call, ActivityResult result) {
+        if (call == null) {
+            pendingImageTempFile = null;
+            return;
+        }
+        JSObject ret = new JSObject();
+        try {
+            if (result != null
+                    && result.getResultCode() == Activity.RESULT_OK
+                    && result.getData() != null
+                    && result.getData().getData() != null
+                    && pendingImageTempFile != null
+                    && pendingImageTempFile.exists()) {
+                Uri targetUri = result.getData().getData();
+                try (InputStream in = new FileInputStream(pendingImageTempFile);
+                     OutputStream out = getContext().getContentResolver().openOutputStream(targetUri)) {
+                    if (out == null) {
+                        ret.put("ok", false);
+                        ret.put("error", "دسترسی نوشتن فایل تصویر برقرار نشد");
+                        call.resolve(ret);
+                        return;
+                    }
+                    byte[] buffer = new byte[4096];
+                    int len;
+                    while ((len = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, len);
+                    }
+                    out.flush();
+                }
+                ret.put("ok", true);
+                ret.put("method", "android_document");
+                call.resolve(ret);
+                return;
+            }
+
+            if (result != null && result.getResultCode() == Activity.RESULT_CANCELED) {
+                ret.put("ok", false);
+                ret.put("cancelled", true);
+                call.resolve(ret);
+                return;
+            }
+
+            ret.put("ok", false);
+            ret.put("error", "ذخیره تصویر انجام نشد");
+            call.resolve(ret);
+        } catch (Exception ex) {
+            ret.put("ok", false);
+            ret.put("error", "خطا هنگام نوشتن فایل تصویر");
+            call.resolve(ret);
+        } finally {
+            pendingImageTempFile = null;
+        }
+    }
+
+    private String sanitizeImageFileName(String rawName) {
+        String cleaned = (rawName == null ? "yadban-weekly.png" : rawName)
+                .replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (cleaned.isEmpty()) cleaned = "yadban-weekly.png";
+        if (!cleaned.endsWith(".png")) cleaned = cleaned + ".png";
+        return cleaned;
+    }
+
+    private File writeCacheImageFile(Context ctx, String safeName, String base64Png) throws Exception {
+        String pure = base64Png != null ? base64Png.replaceFirst("^data:[^;]+;base64,", "") : "";
+        byte[] decoded = Base64.decode(pure, Base64.DEFAULT);
+        File outFile = new File(ctx.getCacheDir(), safeName);
+        try (FileOutputStream fos = new FileOutputStream(outFile, false)) {
+            fos.write(decoded);
+            fos.flush();
+        }
+        return outFile;
+    }
+
+    private void launchImageShareChooser(Context ctx, File tempFile, String safeName) {
+        Uri contentUri = FileProvider.getUriForFile(
+                ctx,
+                ctx.getPackageName() + ".fileprovider",
+                tempFile
+        );
+        Intent sendIntent = new Intent(Intent.ACTION_SEND);
+        sendIntent.setType("image/png");
+        sendIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+        sendIntent.putExtra(Intent.EXTRA_SUBJECT, safeName);
+        sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+        Intent chooser = Intent.createChooser(sendIntent, "اشتراک‌گذاری تصویر برنامه هفتگی یادبان");
+        Activity activity = getActivity();
+        if (activity != null) {
+            activity.startActivity(chooser);
+        } else {
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(chooser);
+        }
     }
 
     private String sanitizeBackupFileName(String rawName) {

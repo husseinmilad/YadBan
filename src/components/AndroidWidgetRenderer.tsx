@@ -55,15 +55,85 @@ export const AndroidWidgetRenderer: React.FC<AndroidWidgetRendererProps> = ({
     .filter((i) => i.pinnedToWidget && (i.phoneNumber || i.category === 'anchor'))
     .slice(0, 4);
 
-  const styleClasses =
-    widget.style === 'contrast'
-      ? 'bg-slate-900 text-white border-slate-700'
-      : widget.style === 'glass'
-        ? 'bg-white/75 dark:bg-slate-900/75 backdrop-blur-xl text-[var(--text-primary)] border-white/40 dark:border-white/10'
-        : 'bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] border-[var(--border-subtle)]';
+  const getThemeStyle = () => {
+    switch (widget.style) {
+      case 'ocean':
+        return {
+          container:
+            'bg-gradient-to-br from-sky-900 to-slate-950 text-white border-sky-400/35',
+          muted: 'text-sky-200/85',
+          input:
+            'bg-sky-950/75 border-sky-400/30 text-white placeholder:text-sky-200/60',
+          progress: '#38BDF8',
+          accentIcon: 'text-sky-300',
+        };
+      case 'emerald':
+        return {
+          container:
+            'bg-gradient-to-br from-emerald-900 to-teal-950 text-white border-emerald-400/35',
+          muted: 'text-emerald-200/85',
+          input:
+            'bg-emerald-950/75 border-emerald-400/30 text-white placeholder:text-emerald-200/60',
+          progress: '#34D399',
+          accentIcon: 'text-emerald-300',
+        };
+      case 'midnight':
+      case 'contrast':
+        return {
+          container:
+            'bg-gradient-to-br from-slate-800 to-slate-950 text-white border-indigo-400/30',
+          muted: 'text-indigo-200/80',
+          input:
+            'bg-slate-900/90 border-indigo-400/25 text-white placeholder:text-slate-400',
+          progress: '#818CF8',
+          accentIcon: 'text-indigo-300',
+        };
+      case 'amber':
+        return {
+          container:
+            'bg-gradient-to-br from-amber-900 to-stone-950 text-amber-50 border-amber-400/35',
+          muted: 'text-amber-200/85',
+          input:
+            'bg-amber-950/75 border-amber-400/30 text-amber-50 placeholder:text-amber-200/60',
+          progress: '#FBBF24',
+          accentIcon: 'text-amber-300',
+        };
+      case 'plum':
+        return {
+          container:
+            'bg-gradient-to-br from-purple-900 to-indigo-950 text-purple-50 border-purple-400/35',
+          muted: 'text-purple-200/85',
+          input:
+            'bg-purple-950/75 border-purple-400/30 text-purple-50 placeholder:text-purple-200/60',
+          progress: '#C084FC',
+          accentIcon: 'text-purple-300',
+        };
+      case 'glass':
+        return {
+          container:
+            'bg-slate-900/75 backdrop-blur-xl text-white border-white/25',
+          muted: 'text-slate-300',
+          input:
+            'bg-slate-800/80 border-white/20 text-white placeholder:text-slate-300',
+          progress: '#2DD4BF',
+          accentIcon: 'text-teal-300',
+        };
+      default:
+        return {
+          container:
+            'bg-gradient-to-br from-teal-900 to-slate-900 text-white border-teal-400/30',
+          muted: 'text-teal-200/85',
+          input:
+            'bg-teal-950/70 border-teal-400/25 text-white placeholder:text-teal-200/60',
+          progress: '#2DD4BF',
+          accentIcon: 'text-teal-300',
+        };
+    }
+  };
 
-  const mutedTextClass =
-    widget.style === 'contrast' ? 'text-slate-300' : 'text-[var(--text-muted)]';
+  const themeStyle = getThemeStyle();
+  const styleClasses = themeStyle.container;
+  const mutedTextClass = themeStyle.muted;
 
   const handleQuickSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,11 +234,7 @@ export const AndroidWidgetRenderer: React.FC<AndroidWidgetRendererProps> = ({
             value={quickInput}
             onChange={(e) => setQuickInput(e.target.value)}
             placeholder="مثلاً: ۰۹۱۲۱۱۱۲۲۳۳ تعمیرکار یا ۱۵ دقیقه دیگه آب بخورم"
-            className={`flex-1 min-h-[44px] rounded-2xl px-3.5 text-sm border focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
-              widget.style === 'contrast'
-                ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-400'
-                : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]'
-            }`}
+            className={`flex-1 min-h-[44px] rounded-2xl px-3.5 text-sm border focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${themeStyle.input}`}
           />
           <button
             type="submit"
@@ -221,7 +287,7 @@ export const AndroidWidgetRenderer: React.FC<AndroidWidgetRendererProps> = ({
                 cy="30"
                 r={r}
                 fill="none"
-                stroke={widget.style === 'contrast' ? '#2DD4BF' : 'var(--accent)'}
+                stroke={themeStyle.progress}
                 strokeWidth="6"
                 strokeLinecap="round"
                 strokeDasharray={c}
@@ -287,9 +353,9 @@ export const AndroidWidgetRenderer: React.FC<AndroidWidgetRendererProps> = ({
           >
             <div className="flex items-center gap-2 min-w-0">
               {item.phoneNumber ? (
-                <Phone className="w-4 h-4 shrink-0 text-[var(--accent)]" />
+                <Phone className={`w-4 h-4 shrink-0 ${themeStyle.accentIcon}`} />
               ) : (
-                <MapPin className="w-4 h-4 shrink-0 text-[var(--accent)]" />
+                <MapPin className={`w-4 h-4 shrink-0 ${themeStyle.accentIcon}`} />
               )}
               <div className="min-w-0">
                 <p className="text-xs font-bold truncate">

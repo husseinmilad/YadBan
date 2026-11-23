@@ -88,6 +88,7 @@ export default function App() {
   const [modalInitialCategory, setModalInitialCategory] = useState<MemoryCategory | undefined>(
     undefined
   );
+  const [modalDefaultDateKey, setModalDefaultDateKey] = useState<string | undefined>(undefined);
 
   const [focusOpen, setFocusOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -152,6 +153,7 @@ export default function App() {
         setEditingItem(null);
         setPrefillText('');
         setModalInitialCategory(undefined);
+        setModalDefaultDateKey(undefined);
         setModalOpen(true);
       } else if (actionParam === 'brain-dump') {
         setBrainDumpOpen(true);
@@ -278,6 +280,46 @@ export default function App() {
     [settings.chimeType]
   );
 
+  const triggerTomorrowDigest = useCallback(
+    (skipNativeNotification = false) => {
+      const tomorrowKey = addDaysToDateKey(getLocalDateKey(new Date()), 1);
+      const tomorrowPending = items
+        .filter((i) => !i.completed && (i.repeatDaily || i.dateStr === tomorrowKey))
+        .sort((a, b) => (a.timeStr || '99:99').localeCompare(b.timeStr || '99:99'));
+
+      const count = tomorrowPending.length;
+      const summaryTitle =
+        count > 0
+          ? `برای فردا ${toPersianDigits(count)} برنامه ثبت شده است`
+          : 'برای فردا برنامه‌ای ثبت نشده است';
+      const previewNotes =
+        count > 0
+          ? tomorrowPending
+              .slice(0, 3)
+              .map((t) => `${t.timeStr ? `${toPersianDigits(t.timeStr)} - ` : ''}${t.title}`)
+              .join(' | ')
+          : 'می‌توانید از بخش برنامه هفتگی یا ثبت فوری، کارهای فردا را اضافه کنید.';
+
+      const digestItem: MemoryItem = {
+        id: 'tomorrow-digest',
+        title: summaryTitle,
+        category: 'work',
+        dateStr: tomorrowKey,
+        timeStr: settings.tomorrowDigestTime || '21:00',
+        timeBlock: 'night',
+        repeatDaily: false,
+        completed: false,
+        completedDates: [],
+        preReminderMinutes: 0,
+        notes: previewNotes,
+        pinnedToWidget: false,
+        createdAt: Date.now(),
+      };
+      void triggerAlert(digestItem, false, 'اعلام برنامه‌های فردا', skipNativeNotification);
+    },
+    [items, settings.tomorrowDigestTime, triggerAlert]
+  );
+
   // Foreground In-App Offline Scheduler (deduplicated staged reminders + repeatUntilDone)
   useEffect(() => {
     const checkReminders = () => {
@@ -346,11 +388,32 @@ export default function App() {
           }
         }
       }
+
+      const digestEnabled = settings.tomorrowDigestEnabled ?? true;
+      const digestTime = settings.tomorrowDigestTime || '21:00';
+      if (digestEnabled && digestTime.includes(':')) {
+        const [dh, dm] = digestTime.split(':').map(Number);
+        if (!Number.isNaN(dh) && !Number.isNaN(dm) && curMinOfDay === dh * 60 + dm) {
+          const digestKey = `tomorrow-digest-${todayKey}-${digestTime}`;
+          if (!firedKeysRef.current.has(digestKey)) {
+            firedKeysRef.current.add(digestKey);
+            triggerTomorrowDigest(onNativeAndroid);
+          }
+        }
+      }
     };
 
     const interval = setInterval(checkReminders, 15000);
     return () => clearInterval(interval);
-  }, [items, settings.autoRepeatNudge, settings.nudgeIntervalMin, triggerAlert]);
+  }, [
+    items,
+    settings.autoRepeatNudge,
+    settings.nudgeIntervalMin,
+    settings.tomorrowDigestEnabled,
+    settings.tomorrowDigestTime,
+    triggerAlert,
+    triggerTomorrowDigest,
+  ]);
 
   const handleSaveItem = (
     data: Omit<MemoryItem, 'id' | 'createdAt'>,
@@ -396,6 +459,8 @@ export default function App() {
     setItems((prev) => [created, ...prev]);
     if (parsed.phoneNumber) {
       showToast('شماره تلفن در صندوق ذهن و ویجت ثبت شد');
+    } else if (parsed.category === 'phone' && !parsed.dateStr) {
+      showToast('در دفترچه تماس و صندوق ذهن ذخیره شد (بدون نیاز به ساعت)');
     } else if (parsed.locationHint) {
       showToast('محل وسیله در دفترچه «کجا گذاشتم؟» ثبت شد');
     } else if (parsed.nextStepTitle) {
@@ -511,6 +576,27 @@ export default function App() {
     }
   };
 
+  const handleCancelSchedule = (id: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              snoozedUntil: undefined,
+              timeStr: '',
+              timeBlock: 'anytime',
+              preReminderMinutes: 0,
+              repeatUntilDone: false,
+            }
+          : item
+      )
+    );
+    if (activeAlert?.item.id === id) {
+      setActiveAlert(null);
+    }
+    showToast('زمان‌بندی این مورد لغو شد');
+  };
+
   const handleMoveTasksToTomorrow = (ids: string[]) => {
     const tomorrowKey = addDaysToDateKey(getLocalDateKey(new Date()), 1);
     const idSet = new Set(ids);
@@ -623,8 +709,15 @@ export default function App() {
       {/* Live Heads-Up Reminder Banner */}
       <HeadsUpReminderBanner
         alert={activeAlert}
-        onComplete={(id) => handleToggleComplete(id, getLocalDateKey(new Date()))}
+        onComplete={(id) => {
+          if (id === 'tomorrow-digest' || id === 'test') {
+            setActiveAlert(null);
+            return;
+          }
+          handleToggleComplete(id, getLocalDateKey(new Date()));
+        }}
         onSnooze={handleSnooze}
+        onCancelSchedule={handleCancelSchedule}
         onDismiss={() => setActiveAlert(null)}
       />
 
@@ -676,6 +769,7 @@ export default function App() {
                 setEditingItem(null);
                 setPrefillText('');
                 setModalInitialCategory(undefined);
+                setModalDefaultDateKey(undefined);
                 setModalOpen(true);
               }}
               className="min-h-[40px] md:min-h-[44px] inline-flex items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--accent)] px-4 py-2 text-xs sm:text-sm font-bold text-[var(--accent-on)] hover:opacity-95 active:scale-[0.98] transition-all whitespace-nowrap shrink-0 cursor-pointer"
@@ -700,20 +794,23 @@ export default function App() {
                 onSelectDateKey={setSelectedDateKey}
                 onToggleComplete={handleToggleComplete}
                 onQuickAdd={handleQuickAdd}
-                onOpenModalForNew={(prefill = '', category) => {
+                onOpenModalForNew={(prefill = '', category, targetDateKey) => {
                   setEditingItem(null);
                   setPrefillText(prefill);
                   setModalInitialCategory(category);
+                  setModalDefaultDateKey(targetDateKey);
                   setModalOpen(true);
                 }}
                 onEditItem={(item) => {
                   setEditingItem(item);
                   setPrefillText('');
                   setModalInitialCategory(undefined);
+                  setModalDefaultDateKey(undefined);
                   setModalOpen(true);
                 }}
                 onDeleteItem={handleDeleteItem}
                 onSnoozeItem={handleSnooze}
+                onCancelSchedule={handleCancelSchedule}
                 onOpenFocusMode={() => {
                   setFocusOpen(true);
                 }}
@@ -785,6 +882,9 @@ export default function App() {
             items={items}
             settings={settings}
             onUpdateWidgets={setWidgets}
+            onChangeNativeWidgetTheme={(theme) =>
+              setSettings((prev) => ({ ...prev, nativeWidgetTheme: theme }))
+            }
             onToggleFloatingWidget={() =>
               setSettings((prev) => ({
                 ...prev,
@@ -819,6 +919,7 @@ export default function App() {
               showToast('داده‌های نمونه بازیابی شدند');
             }}
             onTriggerTestReminder={handleTriggerTestReminder}
+            onTriggerTomorrowDigest={() => triggerTomorrowDigest(false)}
           />
         )}
       </main>
@@ -867,10 +968,13 @@ export default function App() {
       {/* Quick Capture & Full Editor Modal */}
       <QuickCaptureModal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setModalDefaultDateKey(undefined);
+        }}
         onSave={handleSaveItem}
         initialItem={editingItem}
-        defaultDateKey={selectedDateKey}
+        defaultDateKey={modalDefaultDateKey || selectedDateKey}
         initialRawText={prefillText}
         initialCategory={modalInitialCategory}
         customCategories={settings.customCategories}

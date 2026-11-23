@@ -446,7 +446,9 @@ export function parseQuickCapture(rawInput: string, activeDateKey?: string): Par
             ? 'night'
             : 'anytime';
 
-  const finalDateStr = category === 'anchor' && !timeStr && !explicitDateMatched ? '' : dateStr;
+  const isPureStorage =
+    (category === 'anchor' || category === 'phone') && !timeStr && !explicitDateMatched;
+  const finalDateStr = isPureStorage ? '' : dateStr;
 
   return {
     title: cleanTitle,

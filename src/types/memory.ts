@@ -20,7 +20,12 @@ export type WidgetType =
   | 'pinned_phones';
 
 export type WidgetSize = '2x2' | '3x2' | '4x2';
-export type WidgetStyle = 'tonal' | 'glass' | 'contrast';
+export type NativeWidgetTheme = 'ocean' | 'emerald' | 'midnight' | 'amber' | 'plum';
+export type WidgetStyle =
+  | NativeWidgetTheme
+  | 'tonal'
+  | 'glass'
+  | 'contrast';
 
 export interface CustomCategory {
   id: string;
@@ -106,6 +111,9 @@ export interface UserSettings {
   notificationsEnabled: boolean;
   showFloatingWidget: boolean;
   enablePhotoOcr?: boolean;
+  nativeWidgetTheme?: NativeWidgetTheme;
+  tomorrowDigestEnabled?: boolean;
+  tomorrowDigestTime?: string;
   customCategories?: CustomCategory[];
   templates?: TaskTemplate[];
 }
