@@ -44,6 +44,12 @@ interface YadbanNativePluginInterface {
     fileName: string;
     jsonContent: string;
   }): Promise<{ ok: boolean; cancelled?: boolean; method?: string; error?: string }>;
+  importBackupFile(): Promise<{
+    ok: boolean;
+    cancelled?: boolean;
+    jsonContent?: string;
+    error?: string;
+  }>;
   shareBackupFile(options: {
     fileName: string;
     jsonContent: string;
@@ -461,6 +467,22 @@ export async function exportYadbanBackup(
     return { ok: true, method: 'browser_download' };
   } catch {
     return { ok: false, error: 'مرورگر اجازه دانلود مستقیم فایل را نداد.' };
+  }
+}
+
+export async function importYadbanBackupFromFile(): Promise<{
+  ok: boolean;
+  cancelled?: boolean;
+  jsonContent?: string;
+  error?: string;
+}> {
+  if (!isNativeAndroidApp()) {
+    return { ok: false, error: 'NOT_NATIVE_ANDROID' };
+  }
+  try {
+    return await YadbanNative.importBackupFile();
+  } catch {
+    return { ok: false, error: 'خطا در باز کردن فایل پشتیبان از حافظه گوشی.' };
   }
 }
 

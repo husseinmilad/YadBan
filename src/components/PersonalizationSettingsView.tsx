@@ -36,10 +36,13 @@ import {
   playChime,
   unlockAlertSoundAndVibration,
 } from '../utils/audioAndVoice';
+import { parseYadbanBackup } from '../utils/backupParser';
 import { CATEGORY_META, toPersianDigits } from '../utils/dateFa';
 import {
   exportYadbanBackup,
   getNativePermissionsStatus,
+  importYadbanBackupFromFile,
+  isNativeAndroidApp,
   requestNativeBatteryOptimizationExemption,
   requestNativeExactAlarmPermission,
   requestNativeMicrophonePermission,
@@ -226,29 +229,24 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
   };
 
   const applyParsedBackup = (rawJson: string): boolean => {
-    try {
-      const parsed = JSON.parse(rawJson) as {
-        items?: MemoryItem[];
-        settings?: Partial<UserSettings>;
-        widgets?: WidgetConfig[];
-      };
-      if (!Array.isArray(parsed.items)) {
-        setFeedbackMsg('ساختار فایل پشتیبان معتبر نیست (لیست کارها یافت نشد).');
-        return false;
-      }
-      onImportItems(parsed.items);
-      if (parsed.settings && typeof parsed.settings === 'object') {
-        onUpdateSettings(parsed.settings);
-      }
-      if (Array.isArray(parsed.widgets) && parsed.widgets.length > 0 && onImportWidgets) {
-        onImportWidgets(parsed.widgets);
-      }
-      setFeedbackMsg('نسخه پشتیبان با موفقیت بازیابی و در حافظه آفلاین ذخیره شد.');
-      return true;
-    } catch {
-      setFeedbackMsg('متن یا ساختار فایل پشتیبان معتبر نیست.');
+    const result = parseYadbanBackup(rawJson);
+    if (!result.ok) {
+      setFeedbackMsg(result.error);
       return false;
     }
+
+    onImportItems(result.items);
+    if (result.settings && typeof result.settings === 'object') {
+      onUpdateSettings(result.settings);
+    }
+    if (Array.isArray(result.widgets) && result.widgets.length > 0 && onImportWidgets) {
+      onImportWidgets(result.widgets);
+    }
+
+    setFeedbackMsg(
+      `نسخه پشتیبان (${toPersianDigits(result.items.length)} مورد) با موفقیت بازیابی و ذخیره شد.`
+    );
+    return true;
   };
 
   const copyTextSafely = async (text: string): Promise<boolean> => {
@@ -331,20 +329,56 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
     );
   };
 
-  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const readFileTextSafely = async (file: File): Promise<string> => {
+    if (typeof file.text === 'function') {
+      try {
+        const txt = await file.text();
+        if (txt && txt.trim()) return txt;
+      } catch {
+        // fall back to FileReader
+      }
+    }
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve(typeof reader.result === 'string' ? reader.result : '');
+      };
+      reader.onerror = () => reject(new Error('FILE_READ_ERROR'));
+      reader.readAsText(file, 'utf-8');
+    });
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputEl = e.target;
     const file = inputEl.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      applyParsedBackup(String(reader.result));
-      inputEl.value = '';
-    };
-    reader.onerror = () => {
+    try {
+      const content = await readFileTextSafely(file);
+      applyParsedBackup(content);
+    } catch {
       setFeedbackMsg('خواندن فایل انتخاب‌شده با خطا مواجه شد.');
+    } finally {
       inputEl.value = '';
-    };
-    reader.readAsText(file);
+    }
+  };
+
+  const handlePickImportFile = async () => {
+    if (isNativeAndroidApp()) {
+      const nativeRes = await importYadbanBackupFromFile();
+      if (nativeRes.ok && typeof nativeRes.jsonContent === 'string') {
+        applyParsedBackup(nativeRes.jsonContent);
+        return;
+      }
+      if (nativeRes.cancelled) {
+        setFeedbackMsg('بازیابی فایل پشتیبان لغو شد.');
+        return;
+      }
+      if (nativeRes.error && nativeRes.error !== 'مدیریت فایل گوشی در دسترس نیست') {
+        setFeedbackMsg(nativeRes.error);
+        return;
+      }
+    }
+    fileInputRef.current?.click();
   };
 
   const handleRestoreFromPastedText = () => {
@@ -352,7 +386,7 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
       setFeedbackMsg('ابتدا متن JSON پشتیبان را در کادر وارد کنید.');
       return;
     }
-    if (applyParsedBackup(pasteBackupText.trim())) {
+    if (applyParsedBackup(pasteBackupText)) {
       setPasteBackupText('');
       setShowPasteRestore(false);
     }
@@ -1174,7 +1208,7 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
 
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => void handlePickImportFile()}
               className="min-h-[44px] inline-flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] px-4 text-xs font-semibold text-[var(--text-primary)] hover:opacity-90 cursor-pointer"
             >
               <Upload className="w-4 h-4" />
@@ -1183,8 +1217,8 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/json,.json,text/plain"
-              onChange={handleImportFile}
+              accept=".json,application/json,text/plain,*/*"
+              onChange={(e) => void handleImportFile(e)}
               className="hidden"
             />
 

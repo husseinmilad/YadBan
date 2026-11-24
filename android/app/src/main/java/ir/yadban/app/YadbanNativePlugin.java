@@ -28,6 +28,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -395,8 +396,14 @@ public class YadbanNativePlugin extends Plugin {
                     && pendingBackupTempFile != null
                     && pendingBackupTempFile.exists()) {
                 Uri targetUri = result.getData().getData();
+                OutputStream rawOut;
+                try {
+                    rawOut = getContext().getContentResolver().openOutputStream(targetUri, "wt");
+                } catch (Exception ignored) {
+                    rawOut = getContext().getContentResolver().openOutputStream(targetUri);
+                }
                 try (InputStream in = new FileInputStream(pendingBackupTempFile);
-                     OutputStream out = getContext().getContentResolver().openOutputStream(targetUri)) {
+                     OutputStream out = rawOut) {
                     if (out == null) {
                         ret.put("ok", false);
                         ret.put("error", "دسترسی نوشتن به فایل انتخاب‌شده برقرار نشد");
@@ -452,6 +459,83 @@ public class YadbanNativePlugin extends Plugin {
             ret.put("error", "خطا در اشتراک‌گذاری فایل پشتیبان");
         }
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void importBackupFile(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "application/json",
+                "text/plain",
+                "text/*",
+                "application/octet-stream"
+        });
+        try {
+            startActivityForResult(call, intent, "importBackupResult");
+        } catch (ActivityNotFoundException ex) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("error", "مدیریت فایل گوشی در دسترس نیست");
+            call.resolve(ret);
+        }
+    }
+
+    @ActivityCallback
+    private void importBackupResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        JSObject ret = new JSObject();
+        try {
+            if (result != null && result.getResultCode() == Activity.RESULT_CANCELED) {
+                ret.put("ok", false);
+                ret.put("cancelled", true);
+                call.resolve(ret);
+                return;
+            }
+            if (result == null
+                    || result.getResultCode() != Activity.RESULT_OK
+                    || result.getData() == null
+                    || result.getData().getData() == null) {
+                ret.put("ok", false);
+                ret.put("error", "فایلی برای بازیابی انتخاب نشد");
+                call.resolve(ret);
+                return;
+            }
+
+            Uri sourceUri = result.getData().getData();
+            try (InputStream in = getContext().getContentResolver().openInputStream(sourceUri);
+                 ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                if (in == null) {
+                    ret.put("ok", false);
+                    ret.put("error", "دسترسی خواندن فایل پشتیبان برقرار نشد");
+                    call.resolve(ret);
+                    return;
+                }
+                byte[] buffer = new byte[4096];
+                int len;
+                int total = 0;
+                final int maxBytes = 15 * 1024 * 1024;
+                while ((len = in.read(buffer)) != -1) {
+                    total += len;
+                    if (total > maxBytes) {
+                        ret.put("ok", false);
+                        ret.put("error", "حجم فایل انتخاب‌شده بیش از حد مجاز است");
+                        call.resolve(ret);
+                        return;
+                    }
+                    baos.write(buffer, 0, len);
+                }
+                String jsonContent = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+                ret.put("ok", true);
+                ret.put("jsonContent", jsonContent);
+                call.resolve(ret);
+            }
+        } catch (Exception ex) {
+            ret.put("ok", false);
+            ret.put("error", "خطا در خواندن فایل پشتیبان انتخاب‌شده");
+            call.resolve(ret);
+        }
     }
 
     @PluginMethod

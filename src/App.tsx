@@ -100,6 +100,7 @@ export default function App() {
 
   const firedKeysRef = useRef<Set<string>>(new Set());
   const lastNotifiedItemMsRef = useRef<Map<string, number>>(new Map());
+  const lastLocalMutationMsRef = useRef<number>(0);
   const nativeBootLoadedRef = useRef(false);
 
   const refreshPermissionSummary = useCallback(async () => {
@@ -117,7 +118,9 @@ export default function App() {
   const pullFromNativeDb = useCallback(async () => {
     void refreshPermissionSummary();
     if (!isNativeAndroidApp()) return;
+    if (Date.now() - lastLocalMutationMsRef.current < 3000) return;
     const { items: nativeItems, settings: nativeSettings } = await loadNativeOfflineData();
+    if (Date.now() - lastLocalMutationMsRef.current < 3000) return;
     if (nativeItems && Array.isArray(nativeItems)) {
       setItems(nativeItems);
     }
@@ -907,11 +910,19 @@ export default function App() {
             settings={settings}
             items={items}
             widgets={widgets}
-            onUpdateSettings={(partial) =>
-              setSettings((prev) => ({ ...prev, ...partial }))
-            }
-            onImportItems={(imported) => setItems(imported)}
-            onImportWidgets={(importedWidgets) => setWidgets(importedWidgets)}
+            onUpdateSettings={(partial) => {
+              lastLocalMutationMsRef.current = Date.now();
+              setSettings((prev) => ({ ...prev, ...partial }));
+            }}
+            onImportItems={(imported) => {
+              lastLocalMutationMsRef.current = Date.now();
+              setItems(imported);
+              void syncOfflineStateAndAlarms(imported, settings);
+            }}
+            onImportWidgets={(importedWidgets) => {
+              lastLocalMutationMsRef.current = Date.now();
+              setWidgets(importedWidgets);
+            }}
             onResetTasks={handleResetTasks}
             onResetDemo={() => {
               setItems(createSeedItems());
