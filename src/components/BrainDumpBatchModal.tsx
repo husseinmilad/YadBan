@@ -106,12 +106,13 @@ export const BrainDumpBatchModal: React.FC<BrainDumpBatchModalProps> = ({
                 : r.category === 'idea' || r.category === 'anchor'
                   ? 'work'
                   : r.category;
+        const isStorage = role === 'note' || role === 'anchor' || role === 'phone';
         return {
           ...r,
           role,
           category: nextCategory,
-          dateStr: role === 'note' || role === 'anchor' ? '' : r.dateStr || today,
-          timeStr: role === 'reminder' && !r.timeStr ? '09:00' : r.timeStr,
+          dateStr: isStorage ? '' : r.dateStr || today,
+          timeStr: isStorage ? '' : role === 'reminder' && !r.timeStr ? '09:00' : r.timeStr,
         };
       })
     );
@@ -135,29 +136,33 @@ export const BrainDumpBatchModal: React.FC<BrainDumpBatchModalProps> = ({
 
   const handleSaveAll = () => {
     if (rows.length === 0) return;
-    const payload: Omit<MemoryItem, 'id' | 'createdAt'>[] = rows.map((r) => ({
-      title: r.title,
-      category: r.category,
-      dateStr: r.role === 'note' || r.role === 'anchor' ? '' : r.dateStr,
-      timeStr: r.timeStr,
-      timeBlock: r.timeStr
-        ? Number(r.timeStr.split(':')[0]) < 12
-          ? 'morning'
-          : Number(r.timeStr.split(':')[0]) < 16
-            ? 'noon'
-            : Number(r.timeStr.split(':')[0]) < 20
-              ? 'evening'
-              : 'night'
-        : 'anytime',
-      repeatDaily: false,
-      completed: false,
-      completedDates: [],
-      preReminderMinutes: r.timeStr ? 10 : 0,
-      phoneNumber: r.phoneNumber,
-      contactName: r.contactName,
-      locationHint: r.locationHint,
-      pinnedToWidget: r.role === 'phone' || r.role === 'anchor',
-    }));
+    const payload: Omit<MemoryItem, 'id' | 'createdAt'>[] = rows.map((r) => {
+      const isStorage = r.role === 'note' || r.role === 'anchor' || r.role === 'phone';
+      const effectiveTimeStr = isStorage ? '' : r.timeStr;
+      return {
+        title: r.title,
+        category: r.category,
+        dateStr: isStorage ? '' : r.dateStr,
+        timeStr: effectiveTimeStr,
+        timeBlock: effectiveTimeStr
+          ? Number(effectiveTimeStr.split(':')[0]) < 12
+            ? 'morning'
+            : Number(effectiveTimeStr.split(':')[0]) < 16
+              ? 'noon'
+              : Number(effectiveTimeStr.split(':')[0]) < 20
+                ? 'evening'
+                : 'night'
+          : 'anytime',
+        repeatDaily: false,
+        completed: false,
+        completedDates: [],
+        preReminderMinutes: effectiveTimeStr ? 10 : 0,
+        phoneNumber: r.phoneNumber,
+        contactName: r.contactName,
+        locationHint: r.locationHint,
+        pinnedToWidget: r.role === 'phone' || r.role === 'anchor',
+      };
+    });
     onSaveBatch(payload);
     onClose();
   };

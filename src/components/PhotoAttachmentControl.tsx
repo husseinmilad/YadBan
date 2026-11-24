@@ -9,6 +9,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
+import { AiImageProvider } from '../types/memory';
 import { CATEGORY_META, toPersianDigits } from '../utils/dateFa';
 import {
   AiImageAnalysisResult,
@@ -24,27 +25,42 @@ interface PhotoAttachmentControlProps {
   photoId?: string;
   photoText?: string;
   enableOcrByDefault?: boolean;
+  aiProvider?: AiImageProvider;
+  onChangeAiProvider?: (provider: AiImageProvider) => void;
   onChange: (nextPhotoId: string | undefined, nextPhotoText: string | undefined) => void;
   onAiExtracted?: (analysis: AiImageAnalysisResult) => void;
   onQuickSaveExtracted?: (analysis: AiImageAnalysisResult, nextPhotoId: string) => void;
 }
 
+const PROVIDER_LABELS: Record<AiImageProvider, string> = {
+  auto: 'خودکار',
+  chatgpt: 'ChatGPT',
+  deepseek: 'DeepSeek',
+};
+
 export const PhotoAttachmentControl: React.FC<PhotoAttachmentControlProps> = ({
   photoId,
   photoText,
   enableOcrByDefault = true,
+  aiProvider = 'auto',
+  onChangeAiProvider,
   onChange,
   onAiExtracted,
   onQuickSaveExtracted,
 }) => {
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [aiEnabled, setAiEnabled] = useState(enableOcrByDefault);
+  const [selectedProvider, setSelectedProvider] = useState<AiImageProvider>(aiProvider);
   const [processing, setProcessing] = useState(false);
   const [analyzingAi, setAnalyzingAi] = useState(false);
   const [dictatingOcr, setDictatingOcr] = useState(false);
   const [statusNote, setStatusNote] = useState('');
   const [errorNote, setErrorNote] = useState('');
   const [aiResult, setAiResult] = useState<AiImageAnalysisResult | null>(null);
+
+  useEffect(() => {
+    setSelectedProvider(aiProvider);
+  }, [aiProvider]);
 
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
@@ -77,25 +93,32 @@ export const PhotoAttachmentControl: React.FC<PhotoAttachmentControlProps> = ({
   const runAiExtraction = async (
     blob: Blob,
     targetPhotoId: string,
-    existingText?: string
+    existingText?: string,
+    providerOverride?: AiImageProvider
   ) => {
+    const activeProvider = providerOverride ?? selectedProvider;
+    const activeProviderLabel =
+      activeProvider === 'auto' ? 'ChatGPT / DeepSeek' : PROVIDER_LABELS[activeProvider];
     setAnalyzingAi(true);
     setErrorNote('');
-    setStatusNote('در حال خواندن تصویر و استخراج متن با هوش مصنوعی...');
+    setStatusNote(`در حال خواندن تصویر و استخراج متن با ${activeProviderLabel}...`);
     try {
-      const analysis = await analyzeImageWithAi(blob);
+      const analysis = await analyzeImageWithAi(blob, activeProvider);
       setAiResult(analysis);
       const nextText = analysis.extractedText?.trim() || existingText || '';
       onChange(targetPhotoId, nextText || undefined);
       onAiExtracted?.(analysis);
 
+      const usedLabel =
+        analysis.providerUsed === 'deepseek' ? 'DeepSeek' : 'ChatGPT';
+
       if (analysis.extractedText?.trim() || analysis.title?.trim()) {
         setStatusNote(
-          'متن و اطلاعات تصویر با هوش مصنوعی استخراج شد و در فیلدهای فرم قرار گرفت.'
+          `متن و اطلاعات تصویر با ${usedLabel} استخراج شد و در فیلدهای فرم قرار گرفت.`
         );
       } else {
         setStatusNote(
-          'تصویر بررسی شد اما متن خوانایی در آن تشخیص داده نشد؛ می‌توانید متن را دستی وارد کنید.'
+          `تصویر با ${usedLabel} بررسی شد اما متن خوانایی در آن تشخیص داده نشد؛ می‌توانید متن را دستی وارد کنید.`
         );
       }
     } catch (err: unknown) {
@@ -192,10 +215,10 @@ export const PhotoAttachmentControl: React.FC<PhotoAttachmentControlProps> = ({
         <div className="space-y-0.5">
           <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[var(--text-primary)]">
             <Sparkles className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
-            <span>خوانش متن و استخراج کار از تصویر (هوش مصنوعی)</span>
+            <span>خوانش متن و استخراج کار از تصویر (ChatGPT / DeepSeek)</span>
           </span>
           <p className="text-[11px] text-[var(--text-muted)]">
-            عکس برگه، کارت، قبض، نسخه دارو یا محل وسیله را بدهید تا هوش مصنوعی متن را بخواند و کار بسازد.
+            عکس برگه، کارت، قبض، نسخه دارو یا محل وسیله را بدهید تا متن آن استخراج و به کار تبدیل شود.
           </p>
         </div>
 
@@ -211,6 +234,32 @@ export const PhotoAttachmentControl: React.FC<PhotoAttachmentControlProps> = ({
           <ScanText className="w-3.5 h-3.5" />
           <span>خوانش هوش مصنوعی: {aiEnabled ? 'روشن' : 'خاموش'}</span>
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-semibold text-[var(--text-muted)] ml-1">
+          موتور خوانش:
+        </span>
+        {(['auto', 'chatgpt', 'deepseek'] as const).map((prov) => {
+          const active = selectedProvider === prov;
+          return (
+            <button
+              key={prov}
+              type="button"
+              onClick={() => {
+                setSelectedProvider(prov);
+                onChangeAiProvider?.(prov);
+              }}
+              className={`min-h-[30px] px-2.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer whitespace-nowrap ${
+                active
+                  ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
+                  : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              {PROVIDER_LABELS[prov]}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -327,7 +376,7 @@ export const PhotoAttachmentControl: React.FC<PhotoAttachmentControlProps> = ({
         <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--accent)]/35 p-3 space-y-2 animate-task-enter">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-extrabold text-[var(--accent)]">
-              خلاصه استخراج‌شده از تصویر:
+              خلاصه استخراج‌شده با {aiResult.providerUsed === 'deepseek' ? 'DeepSeek' : 'ChatGPT'}:
             </span>
             <div className="flex items-center gap-1.5">
               <button

@@ -859,30 +859,68 @@ export const PersonalizationSettingsView: React.FC<PersonalizationSettingsViewPr
             )}
           </div>
 
-          {/* Photo OCR Recognition Toggle */}
-          <div className="rounded-[var(--radius-control)] border border-[var(--border-subtle)] p-4 flex items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <Camera className="w-4 h-4 text-[var(--accent)] mt-0.5 shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-[var(--text-primary)]">
-                  خوانش خودکار متن از روی تصویر با هوش مصنوعی
-                </p>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  هنگام افزودن عکس برگه، کارت یا محل وسیله، متن و کار مرتبط را خودکار با هوش مصنوعی استخراج می‌کند.
-                </p>
+          {/* Photo OCR Recognition & AI Engine Toggle */}
+          <div className="rounded-[var(--radius-control)] border border-[var(--border-subtle)] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <Camera className="w-4 h-4 text-[var(--accent)] mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-bold text-[var(--text-primary)]">
+                    خوانش خودکار متن از روی تصویر (ChatGPT / DeepSeek)
+                  </p>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                    هنگام افزودن عکس برگه، کارت یا محل وسیله، متن و کار مرتبط را خودکار با هوش مصنوعی استخراج می‌کند.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ enablePhotoOcr: !settings.enablePhotoOcr })}
+                className={`min-h-[40px] px-4 rounded-xl text-xs font-bold cursor-pointer shrink-0 ${
+                  settings.enablePhotoOcr
+                    ? 'bg-[var(--accent)] text-[var(--accent-on)]'
+                    : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)]'
+                }`}
+              >
+                {settings.enablePhotoOcr ? 'فعال' : 'غیرفعال'}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-[var(--border-subtle)]">
+              <div className="space-y-0.5">
+                <span className="block text-xs font-semibold text-[var(--text-secondary)]">
+                  موتور هوش مصنوعی خوانش تصویر:
+                </span>
+                <span className="block text-[11px] text-[var(--text-muted)]">
+                  کلیدهای سرور (OPENAI_API_KEY یا DEEPSEEK_API_KEY) در Settings &gt; Secrets تنظیم می‌شوند.
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {(
+                  [
+                    { id: 'auto', label: 'خودکار' },
+                    { id: 'chatgpt', label: 'ChatGPT' },
+                    { id: 'deepseek', label: 'DeepSeek' },
+                  ] as const
+                ).map((opt) => {
+                  const active = (settings.aiImageProvider || 'auto') === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => onUpdateSettings({ aiImageProvider: opt.id })}
+                      className={`min-h-[36px] px-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer whitespace-nowrap ${
+                        active
+                          ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
+                          : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => onUpdateSettings({ enablePhotoOcr: !settings.enablePhotoOcr })}
-              className={`min-h-[40px] px-4 rounded-xl text-xs font-bold cursor-pointer shrink-0 ${
-                settings.enablePhotoOcr
-                  ? 'bg-[var(--accent)] text-[var(--accent-on)]'
-                  : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)]'
-              }`}
-            >
-              {settings.enablePhotoOcr ? 'فعال' : 'غیرفعال'}
-            </button>
           </div>
         </section>
       </div>

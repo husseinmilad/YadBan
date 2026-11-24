@@ -76,6 +76,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   notificationsEnabled: false,
   showFloatingWidget: false,
   enablePhotoOcr: true,
+  aiImageProvider: 'auto',
   nativeWidgetTheme: 'ocean',
   tomorrowDigestEnabled: true,
   tomorrowDigestTime: '21:00',

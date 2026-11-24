@@ -2,7 +2,6 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GoogleGenAI, Type } from '@google/genai';
 import type { Request, Response } from 'express';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,20 +16,104 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/heic',
   'image/heif',
 ]);
+const ALLOWED_PROVIDERS = new Set(['auto', 'chatgpt', 'deepseek']);
+const VALID_CATEGORIES = new Set([
+  'work',
+  'health',
+  'phone',
+  'errand',
+  'anchor',
+  'fitness',
+  'idea',
+]);
 
-function getGeminiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error('MISSING_GEMINI_API_KEY');
+type ResolvedProvider = 'chatgpt' | 'deepseek';
+type RequestedProvider = 'auto' | ResolvedProvider;
+
+const OPENAI_CHAT_COMPLETIONS_URL = 'https://api.openai.com/v1/chat/completions';
+const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/chat/completions';
+
+function resolveProviderConfig(requested: RequestedProvider): {
+  provider: ResolvedProvider;
+  endpointUrl: string;
+  apiKey: string;
+  model: string;
+} {
+  const openAiKey = (process.env.OPENAI_API_KEY || '').trim();
+  const deepSeekKey = (process.env.DEEPSEEK_API_KEY || '').trim();
+
+  const openAiModel = (process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini').trim();
+  const deepSeekModel = (process.env.DEEPSEEK_VISION_MODEL || 'deepseek-flash').trim();
+
+  if (requested === 'chatgpt') {
+    if (!openAiKey) {
+      throw new Error('MISSING_OPENAI_API_KEY');
+    }
+    return {
+      provider: 'chatgpt',
+      endpointUrl: OPENAI_CHAT_COMPLETIONS_URL,
+      apiKey: openAiKey,
+      model: openAiModel,
+    };
   }
-  return new GoogleGenAI({
-    apiKey: apiKey.trim(),
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
+
+  if (requested === 'deepseek') {
+    if (!deepSeekKey) {
+      throw new Error('MISSING_DEEPSEEK_API_KEY');
+    }
+    return {
+      provider: 'deepseek',
+      endpointUrl: DEEPSEEK_CHAT_COMPLETIONS_URL,
+      apiKey: deepSeekKey,
+      model: deepSeekModel,
+    };
+  }
+
+  if (openAiKey) {
+    return {
+      provider: 'chatgpt',
+      endpointUrl: OPENAI_CHAT_COMPLETIONS_URL,
+      apiKey: openAiKey,
+      model: openAiModel,
+    };
+  }
+
+  if (deepSeekKey) {
+    return {
+      provider: 'deepseek',
+      endpointUrl: DEEPSEEK_CHAT_COMPLETIONS_URL,
+      apiKey: deepSeekKey,
+      model: deepSeekModel,
+    };
+  }
+
+  throw new Error('MISSING_ALL_AI_KEYS');
+}
+
+function parseModelJson(rawText: string): Record<string, unknown> {
+  const trimmed = rawText.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidate = fencedMatch ? fencedMatch[1].trim() : trimmed;
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    const firstBrace = candidate.indexOf('{');
+    const lastBrace = candidate.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      try {
+        const sliced = JSON.parse(candidate.slice(firstBrace, lastBrace + 1)) as unknown;
+        return sliced && typeof sliced === 'object' && !Array.isArray(sliced)
+          ? (sliced as Record<string, unknown>)
+          : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
 }
 
 async function startServer() {
@@ -60,6 +143,7 @@ async function startServer() {
       const body = req.body as {
         imageBase64?: unknown;
         mimeType?: unknown;
+        provider?: unknown;
       };
 
       if (typeof body?.imageBase64 !== 'string' || !body.imageBase64.trim()) {
@@ -72,81 +156,113 @@ async function startServer() {
         res.status(413).json({ error: 'حجم تصویر بیش از حد مجاز است.' });
         return;
       }
+      if (!/^[A-Za-z0-9+/=\s]+$/.test(rawBase64)) {
+        res.status(400).json({ error: 'فرمت داده‌های تصویر معتبر نیست.' });
+        return;
+      }
 
       const mimeType =
         typeof body.mimeType === 'string' && ALLOWED_MIME_TYPES.has(body.mimeType.toLowerCase())
           ? body.mimeType.toLowerCase()
           : 'image/jpeg';
 
-      const ai = getGeminiClient();
+      const requestedProvider: RequestedProvider =
+        typeof body.provider === 'string' && ALLOWED_PROVIDERS.has(body.provider)
+          ? (body.provider as RequestedProvider)
+          : 'auto';
+
+      const { provider, endpointUrl, apiKey, model } = resolveProviderConfig(requestedProvider);
 
       const systemInstruction = [
         'تو دستیار هوشمند فارسی اپلیکیشن «یادبان» هستی.',
         'وظیفه تو خواندن دقیق تمام متن‌های داخل تصویر (برگه کاغذی، یادداشت دست‌نویس، نسخه دارو، کارت ویزیت، قبض، رسید بانکی، بسته کالا یا عکس محل قرارگیری وسیله) و استخراج ساختاریافته اطلاعات است.',
-        'خروجی باید دقیقاً JSON مطابق اسکیما باشد.',
-        'قوانین فیلدها:',
-        '- extractedText: متن کامل و دقیق خوانده‌شده از تصویر با حفظ سطرهای مهم.',
-        '- title: یک عنوان کوتاه، طبیعی و کاربردی به فارسی برای ثبت به‌عنوان کار، یادآور، دارو، شماره یا مکان وسیله (مثلاً «پرداخت قبض برق»، «قرص ویتامین D»، «تماس با مهندس کریمی»، «عینک مطالعه روی میز»).',
-        '- category: فقط یکی از مقادیر مجاز: work | health | phone | errand | anchor | fitness | idea.',
-        '- timeStr: اگر ساعت مشخصی در متن دیده شد با فرمت HH:MM مثل "08:30" وگرنه "".',
-        '- dateHint: اگر اشاره به زمان یا تاریخ وجود دارد مثل "امروز"، "فردا" یا متن تاریخ، وگرنه "".',
-        '- phoneNumber: فقط ارقام شماره تلفن یا موبایل اگر در تصویر بود، وگرنه "".',
-        '- contactName: نام شخص، پزشک، شرکت یا فروشگاه اگر مشخص بود، وگرنه "".',
-        '- locationHint: نشانی، محل نگهداری وسیله یا مکان درج‌شده در تصویر، وگرنه "".',
-        '- dosage: مقدار یا دوز مصرف دارو اگر نسخه یا دارو بود، وگرنه "".',
-        '- notes: خلاصه نکات مهم تصویر، مبلغ قبض، کد پیگیری یا دستور مصرف.',
+        'خروجی باید فقط یک شیء JSON معتبر (بدون توضیح اضافه و بدون markdown) با دقیقاً همین کلیدها باشد:',
+        '{',
+        '  "extractedText": "متن کامل و دقیق خوانده‌شده از تصویر با حفظ سطرهای مهم",',
+        '  "title": "عنوان کوتاه، طبیعی و کاربردی به فارسی برای ثبت کار، یادآور، دارو، شماره یا مکان وسیله",',
+        '  "category": "فقط یکی از: work | health | phone | errand | anchor | fitness | idea",',
+        '  "timeStr": "اگر ساعت مشخص در متن بود به فرمت HH:MM مثل 08:30 وگرنه رشته خالی",',
+        '  "dateHint": "اگر اشاره به زمان یا تاریخ وجود دارد مثل امروز، فردا یا تاریخ متن، وگرنه رشته خالی",',
+        '  "phoneNumber": "فقط ارقام شماره تلفن یا موبایل اگر در تصویر بود، وگرنه رشته خالی",',
+        '  "contactName": "نام شخص، پزشک، شرکت یا فروشگاه اگر مشخص بود، وگرنه رشته خالی",',
+        '  "locationHint": "نشانی، محل نگهداری وسیله یا مکان درج‌شده در تصویر، وگرنه رشته خالی",',
+        '  "dosage": "مقدار یا دوز مصرف دارو اگر نسخه یا دارو بود، وگرنه رشته خالی",',
+        '  "notes": "خلاصه نکات مهم تصویر، مبلغ قبض، کد پیگیری یا دستور مصرف"',
+        '}',
       ].join('\n');
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
-        contents: {
-          parts: [
+      const upstreamRes = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        signal: AbortSignal.timeout(45000),
+        body: JSON.stringify({
+          model,
+          temperature: 0.1,
+          max_tokens: 1200,
+          response_format: { type: 'json_object' },
+          messages: [
             {
-              inlineData: {
-                mimeType,
-                data: rawBase64,
-              },
+              role: 'system',
+              content: systemInstruction,
             },
             {
-              text: 'متن روی این تصویر را با دقت بخوان، استخراج کن و اطلاعات ساختاریافته آن را برای ثبت کار، یادآور، تماس، دارو یا محل وسیله آماده کن.',
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'متن روی این تصویر را با دقت بخوان، استخراج کن و اطلاعات ساختاریافته آن را برای ثبت کار، یادآور، تماس، دارو یا محل وسیله به صورت JSON برگردان.',
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${mimeType};base64,${rawBase64}`,
+                    detail: 'auto',
+                  },
+                },
+              ],
             },
           ],
-        },
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              extractedText: { type: Type.STRING },
-              title: { type: Type.STRING },
-              category: { type: Type.STRING },
-              timeStr: { type: Type.STRING },
-              dateHint: { type: Type.STRING },
-              phoneNumber: { type: Type.STRING },
-              contactName: { type: Type.STRING },
-              locationHint: { type: Type.STRING },
-              dosage: { type: Type.STRING },
-              notes: { type: Type.STRING },
-            },
-            required: ['extractedText', 'title', 'category'],
-          },
-        },
+        }),
       });
 
-      const rawJson = (response.text ?? '{}').trim();
-      const parsed = JSON.parse(rawJson) as Record<string, unknown>;
-      const validCats = new Set([
-        'work',
-        'health',
-        'phone',
-        'errand',
-        'anchor',
-        'fitness',
-        'idea',
-      ]);
+      if (!upstreamRes.ok) {
+        const providerLabel = provider === 'chatgpt' ? 'ChatGPT' : 'DeepSeek';
+        const status = upstreamRes.status;
+        console.error(`${providerLabel} image read HTTP error:`, status);
+
+        if (status === 401 || status === 403) {
+          res.status(502).json({
+            error: `کلید ${providerLabel} نامعتبر است یا دسترسی آن رد شد. کلید را در Settings > Secrets بررسی کنید.`,
+          });
+          return;
+        }
+        if (status === 429) {
+          res.status(429).json({
+            error: `سقف درخواست یا اعتبار حساب ${providerLabel} تکمیل شده است. کمی بعد دوباره امتحان کنید.`,
+          });
+          return;
+        }
+        res.status(502).json({
+          error: `سرویس ${providerLabel} نتوانست تصویر را پردازش کند (کد ${status}). لطفاً دوباره تلاش کنید.`,
+        });
+        return;
+      }
+
+      const completion = (await upstreamRes.json()) as {
+        choices?: Array<{
+          message?: {
+            content?: string | null;
+          };
+        }>;
+      };
+
+      const rawContent = completion?.choices?.[0]?.message?.content;
+      const parsed = parseModelJson(typeof rawContent === 'string' ? rawContent : '{}');
       const category =
-        typeof parsed.category === 'string' && validCats.has(parsed.category)
+        typeof parsed.category === 'string' && VALID_CATEGORIES.has(parsed.category)
           ? parsed.category
           : 'work';
 
@@ -161,12 +277,26 @@ async function startServer() {
         locationHint: typeof parsed.locationHint === 'string' ? parsed.locationHint : '',
         dosage: typeof parsed.dosage === 'string' ? parsed.dosage : '',
         notes: typeof parsed.notes === 'string' ? parsed.notes : '',
+        providerUsed: provider,
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg === 'MISSING_GEMINI_API_KEY') {
+      if (msg === 'MISSING_OPENAI_API_KEY') {
         res.status(500).json({
-          error: 'کلید هوش مصنوعی (GEMINI_API_KEY) در تنظیمات Secrets سرور تعریف نشده است.',
+          error: 'کلید ChatGPT (OPENAI_API_KEY) در Settings > Secrets سرور تعریف نشده است.',
+        });
+        return;
+      }
+      if (msg === 'MISSING_DEEPSEEK_API_KEY') {
+        res.status(500).json({
+          error: 'کلید DeepSeek (DEEPSEEK_API_KEY) در Settings > Secrets سرور تعریف نشده است.',
+        });
+        return;
+      }
+      if (msg === 'MISSING_ALL_AI_KEYS') {
+        res.status(500).json({
+          error:
+            'هیچ کلید هوش مصنوعی تنظیم نشده است. لطفاً کلید OPENAI_API_KEY (برای ChatGPT) یا DEEPSEEK_API_KEY (برای DeepSeek) را در Settings > Secrets قرار دهید.',
         });
         return;
       }

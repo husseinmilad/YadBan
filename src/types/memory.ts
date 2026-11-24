@@ -99,6 +99,8 @@ export interface WidgetConfig {
   order: number;
 }
 
+export type AiImageProvider = 'auto' | 'chatgpt' | 'deepseek';
+
 export interface UserSettings {
   userName: string;
   palette: PaletteId;
@@ -111,6 +113,7 @@ export interface UserSettings {
   notificationsEnabled: boolean;
   showFloatingWidget: boolean;
   enablePhotoOcr?: boolean;
+  aiImageProvider?: AiImageProvider;
   nativeWidgetTheme?: NativeWidgetTheme;
   tomorrowDigestEnabled?: boolean;
   tomorrowDigestTime?: string;

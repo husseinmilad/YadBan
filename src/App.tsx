@@ -981,6 +981,10 @@ export default function App() {
         templates={settings.templates}
         existingItems={items}
         enablePhotoOcr={settings.enablePhotoOcr}
+        aiImageProvider={settings.aiImageProvider}
+        onChangeAiImageProvider={(provider) =>
+          setSettings((prev) => ({ ...prev, aiImageProvider: provider }))
+        }
       />
 
       {/* Distraction-Free Focus Mode Overlay */}

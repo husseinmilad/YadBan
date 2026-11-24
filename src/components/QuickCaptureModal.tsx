@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { getIranDateDetails } from '../data/iranCalendarEvents';
 import {
+  AiImageProvider,
   CustomCategory,
   MemoryCategory,
   MemoryItem,
@@ -52,6 +53,8 @@ interface QuickCaptureModalProps {
   templates?: TaskTemplate[];
   existingItems?: MemoryItem[];
   enablePhotoOcr?: boolean;
+  aiImageProvider?: AiImageProvider;
+  onChangeAiImageProvider?: (provider: AiImageProvider) => void;
 }
 
 const CATEGORIES: MemoryCategory[] = [
@@ -125,6 +128,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   templates = [],
   existingItems = [],
   enablePhotoOcr = true,
+  aiImageProvider = 'auto',
+  onChangeAiImageProvider,
 }) => {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
@@ -240,6 +245,10 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
 
   useEffect(() => {
     if (!parsedPreview || initialItem) return;
+    const effectiveCat = userTouchedCategory ? category : parsedPreview.category;
+    const effectiveStorageOnly =
+      effectiveCat === 'phone' || effectiveCat === 'anchor' || effectiveCat === 'idea';
+
     if (!userTouchedCategory) {
       setCategory(parsedPreview.category);
     }
@@ -258,10 +267,11 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
     if (parsedPreview.priority === 'important') {
       setPriority('important');
     }
-    if (parsedPreview.timeStr && !timeStr) {
+    if (!effectiveStorageOnly && parsedPreview.timeStr && !timeStr) {
       setTimeStr(parsedPreview.timeStr);
     }
     if (
+      !effectiveStorageOnly &&
       parsedPreview.dateStr &&
       parsedPreview.dateStr !== dateStr &&
       (parsedPreview.detectedHints.includes('فردا') ||
@@ -273,7 +283,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
     if (parsedPreview.pinnedToWidget) {
       setPinnedToWidget(true);
     }
-  }, [parsedPreview, userTouchedCategory, initialItem]);
+  }, [parsedPreview, userTouchedCategory, category, initialItem]);
 
   const jalaliMonth = useMemo(() => {
     const safeKey = calendarRefKey || getLocalDateKey(new Date());
@@ -303,14 +313,25 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   const afterTomorrowKey = addDaysToDateKey(todayKey, 2);
 
   const applyTemplate = (tpl: TaskTemplate) => {
+    const tplStorageOnly =
+      tpl.category === 'phone' || tpl.category === 'anchor' || tpl.category === 'idea';
     setCategory(tpl.category);
     setUserTouchedCategory(true);
     setTitle(tpl.defaultTitle);
     if (tpl.defaultNotes) setNotes(tpl.defaultNotes);
-    if (tpl.defaultTimeStr) setTimeStr(tpl.defaultTimeStr);
     if (tpl.subType) setSubType(tpl.subType);
-    setPreReminderMinutes(tpl.preReminderMinutes);
-    setRepeatDaily(Boolean(tpl.repeatDaily));
+    if (tplStorageOnly) {
+      setTimeStr('');
+      setSelectedTimePreset(null);
+      setShowJalaliCalendar(false);
+      setPreReminderMinutes(0);
+      setRepeatDaily(false);
+      setRepeatUntilDone(false);
+    } else {
+      if (tpl.defaultTimeStr) setTimeStr(tpl.defaultTimeStr);
+      setPreReminderMinutes(tpl.preReminderMinutes);
+      setRepeatDaily(Boolean(tpl.repeatDaily));
+    }
     setPriority(tpl.isImportant ? 'important' : 'normal');
   };
 
@@ -363,13 +384,19 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   };
 
   const handleSelectCategory = (cat: MemoryCategory, customId?: string) => {
+    const nextStorageOnly = cat === 'phone' || cat === 'anchor' || cat === 'idea';
     setCategory(cat);
     setCustomCategoryId(customId);
     setUserTouchedCategory(true);
     if ((cat === 'health' || cat === 'anchor' || cat === 'phone') && !initialItem) {
       setPinnedToWidget(true);
     }
-    if (!initialItem && (cat === 'phone' || cat === 'anchor' || cat === 'idea')) {
+    if (nextStorageOnly) {
+      setTimeStr('');
+      setSelectedTimePreset(null);
+      setShowJalaliCalendar(false);
+      setRepeatDaily(false);
+      setRepeatUntilDone(false);
       setPreReminderMinutes(0);
     } else if (!initialItem && preReminderMinutes === 0) {
       setPreReminderMinutes(10);
@@ -384,20 +411,30 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
 
   const handleAiExtracted = (analysis: AiImageAnalysisResult, force = false) => {
     const nextCat = analysis.category || category;
+    const effectiveCat =
+      !customCategoryId && (!userTouchedCategory || force) ? nextCat : category;
+    const effectiveStorageOnly =
+      effectiveCat === 'phone' || effectiveCat === 'anchor' || effectiveCat === 'idea';
+
     if (!customCategoryId && (!userTouchedCategory || force)) {
       setCategory(nextCat);
-      if (nextCat === 'phone' || nextCat === 'anchor' || nextCat === 'idea') {
+      if (effectiveStorageOnly) {
+        setTimeStr('');
+        setSelectedTimePreset(null);
+        setShowJalaliCalendar(false);
+        setRepeatDaily(false);
+        setRepeatUntilDone(false);
         setPreReminderMinutes(0);
       }
     }
     if (analysis.title && (force || !title.trim())) {
       setTitle(analysis.title);
     }
-    if (analysis.timeStr && (force || !timeStr)) {
+    if (!effectiveStorageOnly && analysis.timeStr && (force || !timeStr)) {
       setTimeStr(analysis.timeStr);
       setSelectedTimePreset(null);
     }
-    if (analysis.dateHint) {
+    if (!effectiveStorageOnly && analysis.dateHint) {
       const resolved = resolveDateHintKey(analysis.dateHint);
       if (resolved !== dateStr) {
         setDateStr(resolved);
@@ -428,9 +465,9 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   ) => {
     const cat = analysis.category || category;
     const storageOnlyCat = cat === 'phone' || cat === 'anchor' || cat === 'idea';
-    const resolvedDate = resolveDateHintKey(analysis.dateHint || '');
+    const resolvedDate = storageOnlyCat ? '' : resolveDateHintKey(analysis.dateHint || '');
     const cleanPhone = toEnglishDigits(analysis.phoneNumber || phoneNumber).replace(/[^\d+]/g, '');
-    const tStr = analysis.timeStr || timeStr;
+    const tStr = storageOnlyCat ? '' : analysis.timeStr || timeStr;
     const tBlock: TimeBlock = tStr ? getTimeBlockFromTime(tStr) : 'anytime';
 
     onSave(
@@ -444,16 +481,16 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         notes: (analysis.notes || notes || '').trim() || undefined,
         category: cat,
         customCategoryId,
-        dateStr: storageOnlyCat && !tStr && !repeatDaily ? '' : resolvedDate,
+        dateStr: resolvedDate,
         timeStr: tStr,
         timeBlock: tBlock,
-        repeatDaily,
-        repeatUntilDone,
+        repeatDaily: storageOnlyCat ? false : repeatDaily,
+        repeatUntilDone: storageOnlyCat ? false : repeatUntilDone,
         priority,
         completed: initialItem?.completed ?? false,
         completedDates: initialItem?.completedDates ?? [],
-        preReminderMinutes: tStr ? preReminderMinutes : 0,
-        snoozedUntil: tStr ? initialItem?.snoozedUntil : undefined,
+        preReminderMinutes: !storageOnlyCat && tStr ? preReminderMinutes : 0,
+        snoozedUntil: !storageOnlyCat && tStr ? initialItem?.snoozedUntil : undefined,
         phoneNumber: cleanPhone || undefined,
         contactName: (analysis.contactName || contactName).trim() || undefined,
         locationHint: (analysis.locationHint || locationHint).trim() || undefined,
@@ -494,7 +531,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
           ? 'تصویر و یادداشت پیوست‌شده'
           : 'یادداشت صوتی آفلاین');
     const cleanPhone = toEnglishDigits(phoneNumber).replace(/[^\d+]/g, '');
-    const timeBlock: TimeBlock = timeStr ? getTimeBlockFromTime(timeStr) : 'anytime';
+    const effectiveTimeStr = isStorageOnly ? '' : timeStr;
+    const timeBlock: TimeBlock = effectiveTimeStr ? getTimeBlockFromTime(effectiveTimeStr) : 'anytime';
 
     onSave(
       {
@@ -502,16 +540,16 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         notes: notes.trim() || undefined,
         category,
         customCategoryId,
-        dateStr: isStorageOnly && !timeStr && !repeatDaily ? '' : dateStr,
-        timeStr,
+        dateStr: isStorageOnly ? '' : dateStr,
+        timeStr: effectiveTimeStr,
         timeBlock,
-        repeatDaily,
-        repeatUntilDone,
+        repeatDaily: isStorageOnly ? false : repeatDaily,
+        repeatUntilDone: isStorageOnly ? false : repeatUntilDone,
         priority,
         completed: initialItem?.completed ?? false,
         completedDates: initialItem?.completedDates ?? [],
-        preReminderMinutes: timeStr ? preReminderMinutes : 0,
-        snoozedUntil: timeStr ? initialItem?.snoozedUntil : undefined,
+        preReminderMinutes: !isStorageOnly && effectiveTimeStr ? preReminderMinutes : 0,
+        snoozedUntil: !isStorageOnly && effectiveTimeStr ? initialItem?.snoozedUntil : undefined,
         phoneNumber: cleanPhone || undefined,
         contactName: contactName.trim() || undefined,
         locationHint: locationHint.trim() || undefined,
@@ -681,7 +719,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             )}
 
             {/* Short Live Preview of Natural Language Parsing before Save */}
-            {parsedPreview && parsedPreview.detectedHints.length > 0 && (
+            {parsedPreview && parsedPreview.detectedHints.length > 0 && !isStorageOnly && (
               <div className="mt-2.5 rounded-xl bg-[var(--accent-soft)]/70 border border-[var(--accent)]/25 px-3.5 py-2.5 text-xs space-y-1">
                 <p className="font-bold text-[var(--accent-soft-text)]">
                   پیشنمایش تشخیص زبان طبیعی:
@@ -939,200 +977,194 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             )}
           </div>
 
-          {/* Fast time presets + Jalali Date & Time pickers */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                {isStorageOnly
-                  ? 'زمان‌بندی و یادآور (اختیاری — برای ذخیره ساده نیازی به ساعت نیست)'
-                  : 'زمان‌بندی و یادآور'}
-              </span>
-              {(timeStr || selectedTimePreset) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTimeStr('');
-                    setSelectedTimePreset(null);
-                    setPreReminderMinutes(0);
-                  }}
-                  className="text-xs font-bold text-[var(--sem-danger)] hover:underline cursor-pointer whitespace-nowrap"
-                >
-                  لغو زمان‌بندی
-                </button>
-              )}
-            </div>
-
-            {isStorageOnly && !timeStr && (
-              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                این مورد بدون نیاز به ساعت صرفاً در «صندوق ذهن» ذخیره می‌شود؛ فقط در صورت نیاز ساعت انتخاب کنید.
-              </p>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              {(
-                [
-                  { id: '15m', label: '۱۵ دقیقه دیگه', onClick: () => applyQuickTimeOffset(15, '15m') },
-                  { id: '1h', label: '۱ ساعت دیگه', onClick: () => applyQuickTimeOffset(60, '1h') },
-                  { id: 'evening', label: 'امروز عصر ۱۸:۰۰', onClick: () => applyPresetSlot(false, '18:00', 'evening') },
-                  { id: 'tomorrow9', label: 'فردا صبح ۰۹:۰۰', onClick: () => applyPresetSlot(true, '09:00', 'tomorrow9') },
-                ] as const
-              ).map((preset) => {
-                const active = selectedTimePreset === preset.id;
-                return (
+          {/* Fast time presets + Jalali Date & Time pickers (hidden for anchor, idea, and phone) */}
+          {!isStorageOnly && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">
+                  زمان‌بندی و یادآور
+                </span>
+                {(timeStr || selectedTimePreset) && (
                   <button
-                    key={preset.id}
                     type="button"
-                    onClick={preset.onClick}
-                    className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                      active
-                        ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
-                        : 'bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] border-[var(--border-subtle)] hover:opacity-85'
+                    onClick={() => {
+                      setTimeStr('');
+                      setSelectedTimePreset(null);
+                      setPreReminderMinutes(0);
+                    }}
+                    className="text-xs font-bold text-[var(--sem-danger)] hover:underline cursor-pointer whitespace-nowrap"
+                  >
+                    لغو زمان‌بندی
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { id: '15m', label: '۱۵ دقیقه دیگه', onClick: () => applyQuickTimeOffset(15, '15m') },
+                    { id: '1h', label: '۱ ساعت دیگه', onClick: () => applyQuickTimeOffset(60, '1h') },
+                    { id: 'evening', label: 'امروز عصر ۱۸:۰۰', onClick: () => applyPresetSlot(false, '18:00', 'evening') },
+                    { id: 'tomorrow9', label: 'فردا صبح ۰۹:۰۰', onClick: () => applyPresetSlot(true, '09:00', 'tomorrow9') },
+                  ] as const
+                ).map((preset) => {
+                  const active = selectedTimePreset === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={preset.onClick}
+                      className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                        active
+                          ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
+                          : 'bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] border-[var(--border-subtle)] hover:opacity-85'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Jalali quick date chips + Jalali Picker & Time Input */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs text-[var(--text-muted)]">تاریخ شمسی</label>
+                    <div className="flex items-center gap-1">
+                      {(
+                        [
+                          { key: todayKey, label: 'امروز' },
+                          { key: tomorrowKey, label: 'فردا' },
+                          { key: afterTomorrowKey, label: 'پس‌فردا' },
+                        ] as const
+                      ).map((d) => {
+                        const active = dateStr === d.key;
+                        return (
+                          <button
+                            key={d.label}
+                            type="button"
+                            onClick={() => {
+                              setDateStr(d.key);
+                              setCalendarRefKey(d.key);
+                              setSelectedTimePreset(null);
+                            }}
+                            className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold border cursor-pointer ${
+                              active
+                                ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
+                                : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
+                            }`}
+                          >
+                            {d.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCalendarRefKey(dateStr || todayKey);
+                      setShowJalaliCalendar((v) => !v);
+                    }}
+                    className={`w-full min-h-[44px] flex items-center justify-between gap-2 rounded-[var(--radius-control)] px-3 text-sm font-semibold border cursor-pointer transition-colors ${
+                      showJalaliCalendar
+                        ? 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)] border-[var(--accent)]'
+                        : 'bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] border-[var(--border-subtle)]'
                     }`}
                   >
-                    {preset.label}
+                    <span className="truncate">{selectedDateDisplay}</span>
+                    <Calendar className="w-4 h-4 text-[var(--accent)] shrink-0" />
                   </button>
-                );
-              })}
-            </div>
+                </div>
 
-            {/* Jalali quick date chips + Jalali Picker & Time Input */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs text-[var(--text-muted)]">تاریخ شمسی</label>
-                  <div className="flex items-center gap-1">
-                    {(
-                      [
-                        { key: todayKey, label: 'امروز' },
-                        { key: tomorrowKey, label: 'فردا' },
-                        { key: afterTomorrowKey, label: 'پس‌فردا' },
-                      ] as const
-                    ).map((d) => {
-                      const active = dateStr === d.key;
+                <div>
+                  <label className="block text-xs text-[var(--text-muted)] mb-1.5">ساعت دقیق</label>
+                  <input
+                    type="time"
+                    value={timeStr}
+                    onChange={(e) => {
+                      setTimeStr(e.target.value);
+                      setSelectedTimePreset(null);
+                    }}
+                    className="w-full min-h-[44px] rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] px-3 text-sm font-mono-tabular text-[var(--text-primary)]"
+                  />
+                </div>
+              </div>
+
+              {showJalaliCalendar && (
+                <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] p-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setCalendarRefKey((k) => shiftJalaliMonthKey(k, -1))}
+                      className="min-w-[36px] min-h-[36px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--text-primary)] cursor-pointer"
+                      aria-label="ماه قبل"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <span className="text-sm font-extrabold text-[var(--text-primary)]">
+                      {jalaliMonth.monthTitle} {jalaliMonth.yearFa}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCalendarRefKey((k) => shiftJalaliMonthKey(k, 1))}
+                      className="min-w-[36px] min-h-[36px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--text-primary)] cursor-pointer"
+                      aria-label="ماه بعد"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1 text-center">
+                    {WEEKDAY_HEADERS.map((wd, idx) => (
+                      <span
+                        key={wd}
+                        className={`text-[11px] font-bold py-1 ${
+                          idx === 6 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text-muted)]'
+                        }`}
+                      >
+                        {wd}
+                      </span>
+                    ))}
+
+                    {Array.from({ length: jalaliMonth.leadingEmptyCells }).map((_, idx) => (
+                      <div key={`empty-${idx}`} />
+                    ))}
+
+                    {jalaliMonth.days.map((day) => {
+                      const isSelected = day.dateKey === dateStr;
+                      const details = getIranDateDetails(day.dateKey);
+                      const isHoliday = details.isOfficialHoliday || details.isFriday;
                       return (
                         <button
-                          key={d.label}
+                          key={day.dateKey}
                           type="button"
                           onClick={() => {
-                            setDateStr(d.key);
-                            setCalendarRefKey(d.key);
+                            setDateStr(day.dateKey);
                             setSelectedTimePreset(null);
+                            setShowJalaliCalendar(false);
                           }}
-                          className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold border cursor-pointer ${
-                            active
-                              ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
-                              : 'bg-[var(--bg-surface-tonal)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
+                          className={`min-h-[36px] rounded-xl text-xs font-bold tabular-nums border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
+                              : day.isToday
+                                ? 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)] border-[var(--accent)]/40'
+                                : isHoliday
+                                  ? 'bg-[var(--bg-surface)] text-rose-600 dark:text-rose-400 border-transparent hover:border-rose-400/40'
+                                  : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border-transparent hover:border-[var(--border-subtle)]'
                           }`}
                         >
-                          {d.label}
+                          {day.dayNumFa}
                         </button>
                       );
                     })}
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCalendarRefKey(dateStr || todayKey);
-                    setShowJalaliCalendar((v) => !v);
-                  }}
-                  className={`w-full min-h-[44px] flex items-center justify-between gap-2 rounded-[var(--radius-control)] px-3 text-sm font-semibold border cursor-pointer transition-colors ${
-                    showJalaliCalendar
-                      ? 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)] border-[var(--accent)]'
-                      : 'bg-[var(--bg-surface-tonal)] text-[var(--text-primary)] border-[var(--border-subtle)]'
-                  }`}
-                >
-                  <span className="truncate">{selectedDateDisplay}</span>
-                  <Calendar className="w-4 h-4 text-[var(--accent)] shrink-0" />
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs text-[var(--text-muted)] mb-1.5">ساعت دقیق</label>
-                <input
-                  type="time"
-                  value={timeStr}
-                  onChange={(e) => {
-                    setTimeStr(e.target.value);
-                    setSelectedTimePreset(null);
-                  }}
-                  className="w-full min-h-[44px] rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] px-3 text-sm font-mono-tabular text-[var(--text-primary)]"
-                />
-              </div>
+              )}
             </div>
-
-            {showJalaliCalendar && (
-              <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)] border border-[var(--border-subtle)] p-3.5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setCalendarRefKey((k) => shiftJalaliMonthKey(k, -1))}
-                    className="min-w-[36px] min-h-[36px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--text-primary)] cursor-pointer"
-                    aria-label="ماه قبل"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                  <span className="text-sm font-extrabold text-[var(--text-primary)]">
-                    {jalaliMonth.monthTitle} {jalaliMonth.yearFa}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCalendarRefKey((k) => shiftJalaliMonthKey(k, 1))}
-                    className="min-w-[36px] min-h-[36px] rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--text-primary)] cursor-pointer"
-                    aria-label="ماه بعد"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-7 gap-1 text-center">
-                  {WEEKDAY_HEADERS.map((wd, idx) => (
-                    <span
-                      key={wd}
-                      className={`text-[11px] font-bold py-1 ${
-                        idx === 6 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text-muted)]'
-                      }`}
-                    >
-                      {wd}
-                    </span>
-                  ))}
-
-                  {Array.from({ length: jalaliMonth.leadingEmptyCells }).map((_, idx) => (
-                    <div key={`empty-${idx}`} />
-                  ))}
-
-                  {jalaliMonth.days.map((day) => {
-                    const isSelected = day.dateKey === dateStr;
-                    const details = getIranDateDetails(day.dateKey);
-                    const isHoliday = details.isOfficialHoliday || details.isFriday;
-                    return (
-                      <button
-                        key={day.dateKey}
-                        type="button"
-                        onClick={() => {
-                          setDateStr(day.dateKey);
-                          setSelectedTimePreset(null);
-                          setShowJalaliCalendar(false);
-                        }}
-                        className={`min-h-[36px] rounded-xl text-xs font-bold tabular-nums border transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)] shadow-sm'
-                            : day.isToday
-                              ? 'bg-[var(--accent-soft)] text-[var(--accent-soft-text)] border-[var(--accent)]/40'
-                              : isHoliday
-                                ? 'bg-[var(--bg-surface)] text-rose-600 dark:text-rose-400 border-transparent hover:border-rose-400/40'
-                                : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border-transparent hover:border-[var(--border-subtle)]'
-                        }`}
-                      >
-                        {day.dayNumFa}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Priority, Repeat, Repeat-until-done, Pin options */}
           <div className="grid grid-cols-2 gap-2">
@@ -1149,31 +1181,35 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               <span>{priority === 'important' ? 'کار مهم است' : 'اولویت مهم'}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setRepeatUntilDone((v) => !v)}
-              className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
-                repeatUntilDone
-                  ? 'bg-[var(--sem-warning-soft)] text-[var(--sem-warning)] border-[var(--sem-warning)]/40'
-                  : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
-              }`}
-            >
-              <BellRing className="w-3.5 h-3.5" />
-              <span>{repeatUntilDone ? 'تکرار تا زمان انجام' : 'پیگیری تا انجام'}</span>
-            </button>
+            {!isStorageOnly && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setRepeatUntilDone((v) => !v)}
+                  className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
+                    repeatUntilDone
+                      ? 'bg-[var(--sem-warning-soft)] text-[var(--sem-warning)] border-[var(--sem-warning)]/40'
+                      : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
+                  }`}
+                >
+                  <BellRing className="w-3.5 h-3.5" />
+                  <span>{repeatUntilDone ? 'تکرار تا زمان انجام' : 'پیگیری تا انجام'}</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setRepeatDaily((v) => !v)}
-              className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
-                repeatDaily
-                  ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
-                  : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
-              }`}
-            >
-              <Repeat className="w-3.5 h-3.5" />
-              <span>{repeatDaily ? 'تکرار روزانه فعال' : 'تکرار روزانه'}</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setRepeatDaily((v) => !v)}
+                  className={`min-h-[42px] flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] border px-3 text-xs font-semibold transition-all cursor-pointer ${
+                    repeatDaily
+                      ? 'bg-[var(--accent)] text-[var(--accent-on)] border-[var(--accent)]'
+                      : 'bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-subtle)]'
+                  }`}
+                >
+                  <Repeat className="w-3.5 h-3.5" />
+                  <span>{repeatDaily ? 'تکرار روزانه فعال' : 'تکرار روزانه'}</span>
+                </button>
+              </>
+            )}
 
             <button
               type="button"
@@ -1189,7 +1225,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             </button>
           </div>
 
-          {timeStr && (
+          {!isStorageOnly && timeStr && (
             <div className="rounded-[var(--radius-control)] bg-[var(--bg-surface-tonal)]/60 border border-[var(--border-subtle)] p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <span className="text-xs font-semibold text-[var(--text-secondary)]">
                 پیش‌هشدار مرحله‌ای قبل از موعد:
@@ -1273,6 +1309,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                 photoId={photoId}
                 photoText={photoText}
                 enableOcrByDefault={enablePhotoOcr}
+                aiProvider={aiImageProvider}
+                onChangeAiProvider={onChangeAiImageProvider}
                 onChange={(id, txt) => {
                   setPhotoId(id);
                   setPhotoText(txt);

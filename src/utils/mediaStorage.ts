@@ -1,4 +1,4 @@
-import { MemoryCategory } from '../types/memory';
+import { AiImageProvider, MemoryCategory } from '../types/memory';
 
 const PHOTO_DB_NAME = 'yadban_offline_photos_v1';
 const PHOTO_STORE_NAME = 'photo_notes';
@@ -15,6 +15,7 @@ export interface AiImageAnalysisResult {
   locationHint: string;
   dosage: string;
   notes: string;
+  providerUsed?: 'chatgpt' | 'deepseek';
 }
 
 function openPhotoDb(): Promise<IDBDatabase> {
@@ -127,7 +128,10 @@ function getAiEndpointUrl(apiPath: string): string {
   return apiPath;
 }
 
-export async function analyzeImageWithAi(source: Blob): Promise<AiImageAnalysisResult> {
+export async function analyzeImageWithAi(
+  source: Blob,
+  provider: AiImageProvider = 'auto'
+): Promise<AiImageAnalysisResult> {
   const imageBase64 = await blobToBase64(source);
   const endpoint = getAiEndpointUrl('/api/ai/read-image');
 
@@ -139,6 +143,7 @@ export async function analyzeImageWithAi(source: Blob): Promise<AiImageAnalysisR
       body: JSON.stringify({
         imageBase64,
         mimeType: source.type || 'image/jpeg',
+        provider,
       }),
     });
   } catch {
@@ -171,5 +176,6 @@ export async function analyzeImageWithAi(source: Blob): Promise<AiImageAnalysisR
     locationHint: data.locationHint || '',
     dosage: data.dosage || '',
     notes: data.notes || '',
+    providerUsed: data.providerUsed,
   };
 }
